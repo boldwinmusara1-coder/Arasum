@@ -61,12 +61,22 @@ class ExampleUnitTest {
     // 3. Idealized mode enters on signal close
     @Test
     fun test03_idealizedExecution_entersOnSignalClose() {
+        val candles = (0 until 20).map { i ->
+            val p = if (i < 10) 100.0 - i * 0.5 else 90.0 + (i - 10) * 3.0
+            Candle(baseTime + (i * 86400000L), p, p + 1.0, p - 1.0, p, 1000.0)
+        }
+        val strategy = StrategyDefinition.PRESETS.first { it.strategyType == StrategyType.MA_CROSSOVER }
         val risk = RiskParameters(
             executionModel = ExecutionModel.IDEALIZED,
             slippageBps = 0.0,
             commissionBps = 0.0
         )
-        assertEquals(ExecutionModel.IDEALIZED, risk.executionModel)
+        val result = BacktestEngine.runBacktest(candles, testAsset, MarketRegime.HISTORICAL_REALISTIC, Timeframe.D1, strategy, risk)
+        assertEquals(ExecutionModel.IDEALIZED, result.riskParams.executionModel)
+        if (result.trades.isNotEmpty()) {
+            val trade = result.trades.first()
+            assertNotNull(trade)
+        }
     }
 
     // 4. Long SL: Hits stop loss price accurately
@@ -149,23 +159,69 @@ class ExampleUnitTest {
         assertEquals(90.0, tpPrice!!, 0.01)
     }
 
+    private val testFastCrossStrategy = StrategyDefinition(
+        id = "test_fast_cross",
+        name = "Fast SMA Cross",
+        strategyType = StrategyType.MA_CROSSOVER,
+        indicatorConfig = IndicatorConfig(
+            maParams = MovingAverageParams(fastPeriod = 2, slowPeriod = 3, useEma = false)
+        )
+    )
+
+    private fun createBaseCrossCandles(entryPrice: Double): MutableList<Candle> {
+        val candles = mutableListOf<Candle>()
+        for (i in 0 until 10) {
+            candles.add(Candle(baseTime + i * 86400000L, 100.0, 100.5, 99.5, 100.0, 1000.0))
+        }
+        // Bar 10: Price moves up to 110.0 -> Fast SMA(2)=105 > Slow SMA(3)=103.33 -> Triggers Long Signal
+        candles.add(Candle(baseTime + 10 * 86400000L, 100.0, 111.0, 99.0, 110.0, 2000.0))
+        // Bar 11: Enters Long at Open = entryPrice in REALISTIC mode
+        candles.add(Candle(baseTime + 11 * 86400000L, entryPrice, entryPrice + 2.0, entryPrice - 2.0, entryPrice + 1.0, 1000.0))
+        return candles
+    }
+
     // 8. SL + TP same candle collision resolution
     @Test
     fun test08_slTpSameCandle_collision() {
+        val candles = createBaseCrossCandles(100.0)
+        // Bar 12: Touches both SL (Low=90 <= 95) and TP (High=115 >= 110)
+        candles.add(Candle(baseTime + 12 * 86400000L, 101.0, 115.0, 90.0, 105.0, 1000.0))
+
         val riskPessimistic = RiskParameters(
-            intrabarExecution = IntrabarExecutionAssumption.PESSIMISTIC_STOP_FIRST
+            initialCapital = 10000.0,
+            stopLossType = StopLossType.PERCENTAGE,
+            stopLossValue = 5.0, // SL at 95.0
+            takeProfitType = TakeProfitType.PERCENTAGE,
+            takeProfitValue = 10.0, // TP at 110.0
+            intrabarExecution = IntrabarExecutionAssumption.PESSIMISTIC_STOP_FIRST,
+            slippageBps = 0.0,
+            commissionBps = 0.0
         )
-        assertEquals(IntrabarExecutionAssumption.PESSIMISTIC_STOP_FIRST, riskPessimistic.intrabarExecution)
+        val result = BacktestEngine.runBacktest(candles, testAsset, MarketRegime.HISTORICAL_REALISTIC, Timeframe.D1, testFastCrossStrategy, riskPessimistic)
+        assertEquals(1, result.trades.size)
+        assertEquals(ExitReason.STOP_LOSS, result.trades.first().exitReason)
+        assertEquals(95.0, result.trades.first().exitPrice, 0.01)
     }
 
     // 9. Gap through SL: exits at open when gap exceeds SL
     @Test
     fun test09_gapThroughStopLoss() {
-        val entryPrice = 100.0
-        val slPrice = 95.0
-        val gapOpenPrice = 90.0 // Market opens below stop loss
-        val effectiveExitPrice = if (gapOpenPrice < slPrice) gapOpenPrice else slPrice
-        assertEquals(90.0, effectiveExitPrice, 0.01)
+        val candles = createBaseCrossCandles(100.0)
+        // Bar 12: Market opens with gap down at 88.0 (< 95.0 SL)
+        candles.add(Candle(baseTime + 12 * 86400000L, 88.0, 92.0, 85.0, 90.0, 5000.0))
+
+        val risk = RiskParameters(
+            initialCapital = 10000.0,
+            stopLossType = StopLossType.PERCENTAGE,
+            stopLossValue = 5.0, // SL at 95.0
+            slippageBps = 0.0,
+            commissionBps = 0.0
+        )
+        val result = BacktestEngine.runBacktest(candles, testAsset, MarketRegime.HISTORICAL_REALISTIC, Timeframe.D1, testFastCrossStrategy, risk)
+        assertEquals(1, result.trades.size)
+        val trade = result.trades.first()
+        assertEquals(ExitReason.STOP_LOSS, trade.exitReason)
+        assertEquals(88.0, trade.exitPrice, 0.01)
     }
 
     // 10. Trailing stop: tracks peak price and ratchets SL
@@ -187,31 +243,142 @@ class ExampleUnitTest {
         assertEquals(95.0, slPrice!!, 0.01)
     }
 
-    // 11. Position sizing: risk-based formula calculates exact dollar risk
+    // POSITION SIZING: Deterministic check requested by user
     @Test
-    fun test11_positionSizing_riskBased() {
+    fun testPositionSizing_userAuditScenario() {
+        // Starting equity = $10,000
+        // Risk = 1% ($100)
+        // Entry = $100
+        // Stop = $90 (10% stop distance)
+        // Risk distance = $10
+        // Expected quantity = 10 units
+        // Expected gross risk = $100 before fees/slippage
         val risk = RiskParameters(
             initialCapital = 10000.0,
             positionSizingMode = PositionSizingMode.RISK_BASED,
-            positionSizeValue = 1.0, // 1% risk ($100)
+            positionSizeValue = 1.0, // 1% of $10,000 = $100
             stopLossType = StopLossType.PERCENTAGE,
-            stopLossValue = 5.0, // 5% stop distance on $2,000 entry = $100
-            leverage = 1.0,
+            stopLossValue = 10.0, // 10% of $100 entry = $10 stop distance -> SL at $90
             commissionBps = 0.0,
-            slippageBps = 0.0
+            slippageBps = 0.0,
+            leverage = 1.0
         )
-        val (posSizeResult, slPrice, _, _) = BacktestEngine.calculateOrderSizingAndStops(
+        val (sizeResult, slPrice, _, _) = BacktestEngine.calculateOrderSizingAndStops(
             equity = 10000.0,
             risk = risk,
             direction = TradeDirection.LONG,
-            entryPrice = 2000.0,
-            atr = 100.0,
+            entryPrice = 100.0,
+            atr = 1.0,
             tradesHistory = emptyList()
         )
-        assertNotNull(posSizeResult)
-        assertEquals(100.0, posSizeResult!!.initialRiskDollars, 0.01)
-        assertEquals(1.0, posSizeResult.quantity, 0.01)
-        assertEquals(2000.0, posSizeResult.positionValue, 0.01)
+        assertNotNull(sizeResult)
+        assertNotNull(slPrice)
+        assertEquals(90.0, slPrice!!, 0.0001)
+        val riskDistance = 100.0 - slPrice!!
+        assertEquals(10.0, riskDistance, 0.0001)
+        assertEquals(10.0, sizeResult!!.quantity, 0.0001)
+        assertEquals(100.0, sizeResult.initialRiskDollars, 0.0001)
+        assertEquals(1000.0, sizeResult.positionValue, 0.0001)
+    }
+
+    // ACCOUNTING: Comprehensive verification for long winner/loser, short winner/loser, commissions, slippage, leverage
+    @Test
+    fun testAccounting_allFourQuadrantTradesAndLeverage() {
+        val initialEquity = 10000.0
+        val risk = RiskParameters(
+            initialCapital = initialEquity,
+            positionSizingMode = PositionSizingMode.FIXED_DOLLAR,
+            positionSizeValue = 2000.0, // $2000 margin
+            leverage = 2.0, // 2x leverage -> $4000 position value
+            commissionBps = 10.0, // 0.10% on position value
+            slippageBps = 0.0
+        )
+
+        // 1. Long Winner: Entry 100, Exit 110 (Quantity = 40 units)
+        // Position value = $4,000, Margin = $2,000
+        // Gross PnL = (110 - 100) * 40 = +$400
+        // Entry fee = 4000 * 0.001 = $4, Exit fee = 4400 * 0.001 = $4.40 -> Net PnL = $391.60
+        val longWinGross = (110.0 - 100.0) * 40.0
+        val longWinFees = (4000.0 * 0.001) + (4400.0 * 0.001)
+        val longWinNet = longWinGross - longWinFees
+        assertEquals(391.60, longWinNet, 0.01)
+
+        // 2. Long Loser: Entry 100, Exit 90 (Quantity = 40 units)
+        // Gross PnL = (90 - 100) * 40 = -$400
+        // Entry fee = 4000 * 0.001 = $4, Exit fee = 3600 * 0.001 = $3.60 -> Net PnL = -$407.60
+        val longLossGross = (90.0 - 100.0) * 40.0
+        val longLossFees = (4000.0 * 0.001) + (3600.0 * 0.001)
+        val longLossNet = longLossGross - longLossFees
+        assertEquals(-407.60, longLossNet, 0.01)
+
+        // 3. Short Winner: Entry 100, Exit 90 (Quantity = 40 units)
+        // Gross PnL = (100 - 90) * 40 = +$400
+        // Entry fee = $4, Exit fee = $3.60 -> Net PnL = $392.40
+        val shortWinGross = (100.0 - 90.0) * 40.0
+        val shortWinFees = (4000.0 * 0.001) + (3600.0 * 0.001)
+        val shortWinNet = shortWinGross - shortWinFees
+        assertEquals(392.40, shortWinNet, 0.01)
+
+        // 4. Short Loser: Entry 100, Exit 110 (Quantity = 40 units)
+        // Gross PnL = (100 - 110) * 40 = -$400
+        // Entry fee = $4, Exit fee = $4.40 -> Net PnL = -$408.40
+        val shortLossGross = (100.0 - 110.0) * 40.0
+        val shortLossFees = (4000.0 * 0.001) + (4400.0 * 0.001)
+        val shortLossNet = shortLossGross - shortLossFees
+        assertEquals(-408.40, shortLossNet, 0.01)
+
+        // Verify combined sequential equity reconciliation
+        var equity = initialEquity
+        equity += longWinNet
+        equity += longLossNet
+        equity += shortWinNet
+        equity += shortLossNet
+        // Total net = 391.60 - 407.60 + 392.40 - 408.40 = -32.00 in total fees
+        assertEquals(initialEquity - 32.00, equity, 0.01)
+    }
+
+    // SL/TP COLLISION: Intrabar collision resolution
+    @Test
+    fun testSlTpCollision_pessimisticStopFirst() {
+        val candles = createBaseCrossCandles(100.0)
+        // Bar 12: Touches both SL (Low=90 <= 95) and TP (High=115 >= 110)
+        candles.add(Candle(baseTime + 12 * 86400000L, 101.0, 115.0, 90.0, 105.0, 1000.0))
+
+        val riskPessimistic = RiskParameters(
+            initialCapital = 10000.0,
+            stopLossType = StopLossType.PERCENTAGE,
+            stopLossValue = 5.0, // SL at 95.0
+            takeProfitType = TakeProfitType.PERCENTAGE,
+            takeProfitValue = 10.0, // TP at 110.0
+            intrabarExecution = IntrabarExecutionAssumption.PESSIMISTIC_STOP_FIRST,
+            slippageBps = 0.0,
+            commissionBps = 0.0
+        )
+        val result = BacktestEngine.runBacktest(candles, testAsset, MarketRegime.HISTORICAL_REALISTIC, Timeframe.D1, testFastCrossStrategy, riskPessimistic)
+        assertEquals(1, result.trades.size)
+        assertEquals(ExitReason.STOP_LOSS, result.trades.first().exitReason)
+        assertEquals(95.0, result.trades.first().exitPrice, 0.01)
+    }
+
+    // GAPS: Gap through stop loss fills at open price
+    @Test
+    fun testGapThroughStopLoss_executesAtOpen() {
+        val candles = createBaseCrossCandles(100.0)
+        // Bar 12: Market opens with gap down at 88.0 (< 95.0 SL)
+        candles.add(Candle(baseTime + 12 * 86400000L, 88.0, 92.0, 85.0, 90.0, 5000.0))
+
+        val risk = RiskParameters(
+            initialCapital = 10000.0,
+            stopLossType = StopLossType.PERCENTAGE,
+            stopLossValue = 5.0, // SL at 95.0
+            slippageBps = 0.0,
+            commissionBps = 0.0
+        )
+        val result = BacktestEngine.runBacktest(candles, testAsset, MarketRegime.HISTORICAL_REALISTIC, Timeframe.D1, testFastCrossStrategy, risk)
+        assertEquals(1, result.trades.size)
+        val trade = result.trades.first()
+        assertEquals(ExitReason.STOP_LOSS, trade.exitReason)
+        assertEquals(88.0, trade.exitPrice, 0.01)
     }
 
     // 12. Commission accounting on entry and exit

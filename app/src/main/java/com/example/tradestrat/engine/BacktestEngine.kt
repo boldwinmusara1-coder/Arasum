@@ -165,7 +165,21 @@ object BacktestEngine {
                 }
 
                 if (!exitTrade) {
+                    val slAtBarOpen = pos.stopLossPrice
+                    val tpAtBarOpen = pos.takeProfitPrice
+
                     if (pos.direction == TradeDirection.LONG) {
+                        // If trailing stop, ratchet peak price with current candle high
+                        if (pos.isTrailingStop && candle.high > pos.trailingPeakPrice) {
+                            pos.trailingPeakPrice = candle.high
+                            if (risk.stopLossType == StopLossType.TRAILING_PERCENTAGE) {
+                                pos.stopLossPrice = pos.trailingPeakPrice * (1.0 - (risk.stopLossValue / 100.0))
+                            } else if (risk.stopLossType == StopLossType.TRAILING_ATR) {
+                                val atrVal = indicators.atr.getOrNull(i) ?: (candle.close * 0.02)
+                                pos.stopLossPrice = pos.trailingPeakPrice - (risk.stopLossValue * atrVal)
+                            }
+                        }
+
                         // Check Gap-through-Stop or Low-through-Stop
                         val slHit = pos.stopLossPrice != null && candle.low <= pos.stopLossPrice!!
                         val tpHit = pos.takeProfitPrice != null && candle.high >= pos.takeProfitPrice!!
@@ -187,7 +201,8 @@ object BacktestEngine {
                             if (slFirst) {
                                 exitTrade = true
                                 exitReason = if (pos.isTrailingStop) ExitReason.TRAILING_STOP else ExitReason.STOP_LOSS
-                                exitPrice = if (candle.open <= pos.stopLossPrice!!) {
+                                val isGap = slAtBarOpen != null && candle.open <= slAtBarOpen
+                                exitPrice = if (isGap) {
                                     candle.open * (1.0 - slippageRate) // Gap down fill
                                 } else {
                                     pos.stopLossPrice!! * (1.0 - slippageRate)
@@ -195,7 +210,8 @@ object BacktestEngine {
                             } else {
                                 exitTrade = true
                                 exitReason = ExitReason.TAKE_PROFIT
-                                exitPrice = if (candle.open >= pos.takeProfitPrice!!) {
+                                val isGap = tpAtBarOpen != null && candle.open >= tpAtBarOpen
+                                exitPrice = if (isGap) {
                                     candle.open * (1.0 - slippageRate) // Gap up fill
                                 } else {
                                     pos.takeProfitPrice!! * (1.0 - slippageRate)
@@ -204,7 +220,8 @@ object BacktestEngine {
                         } else if (slHit) {
                             exitTrade = true
                             exitReason = if (pos.isTrailingStop) ExitReason.TRAILING_STOP else ExitReason.STOP_LOSS
-                            exitPrice = if (candle.open <= pos.stopLossPrice!!) {
+                            val isGap = slAtBarOpen != null && candle.open <= slAtBarOpen
+                            exitPrice = if (isGap) {
                                 candle.open * (1.0 - slippageRate) // Gap down past stop
                             } else {
                                 pos.stopLossPrice!! * (1.0 - slippageRate)
@@ -212,24 +229,25 @@ object BacktestEngine {
                         } else if (tpHit) {
                             exitTrade = true
                             exitReason = ExitReason.TAKE_PROFIT
-                            exitPrice = if (candle.open >= pos.takeProfitPrice!!) {
+                            val isGap = tpAtBarOpen != null && candle.open >= tpAtBarOpen
+                            exitPrice = if (isGap) {
                                 candle.open * (1.0 - slippageRate) // Gap up past TP
                             } else {
                                 pos.takeProfitPrice!! * (1.0 - slippageRate)
                             }
-                        } else if (pos.isTrailingStop) {
-                            // Trailing stop update (strictly sequential, no look-ahead)
-                            if (candle.high > pos.trailingPeakPrice) {
-                                pos.trailingPeakPrice = candle.high
-                                if (risk.stopLossType == StopLossType.TRAILING_PERCENTAGE) {
-                                    pos.stopLossPrice = pos.trailingPeakPrice * (1.0 - (risk.stopLossValue / 100.0))
-                                } else if (risk.stopLossType == StopLossType.TRAILING_ATR) {
-                                    val atrVal = indicators.atr.getOrNull(i) ?: (candle.close * 0.02)
-                                    pos.stopLossPrice = pos.trailingPeakPrice - (risk.stopLossValue * atrVal)
-                                }
-                            }
                         }
                     } else { // SHORT Position
+                        // If trailing stop, ratchet peak price with current candle low
+                        if (pos.isTrailingStop && candle.low < pos.trailingPeakPrice) {
+                            pos.trailingPeakPrice = candle.low
+                            if (risk.stopLossType == StopLossType.TRAILING_PERCENTAGE) {
+                                pos.stopLossPrice = pos.trailingPeakPrice * (1.0 + (risk.stopLossValue / 100.0))
+                            } else if (risk.stopLossType == StopLossType.TRAILING_ATR) {
+                                val atrVal = indicators.atr.getOrNull(i) ?: (candle.close * 0.02)
+                                pos.stopLossPrice = pos.trailingPeakPrice + (risk.stopLossValue * atrVal)
+                            }
+                        }
+
                         val slHit = pos.stopLossPrice != null && candle.high >= pos.stopLossPrice!!
                         val tpHit = pos.takeProfitPrice != null && candle.low <= pos.takeProfitPrice!!
 
@@ -249,7 +267,8 @@ object BacktestEngine {
                             if (slFirst) {
                                 exitTrade = true
                                 exitReason = if (pos.isTrailingStop) ExitReason.TRAILING_STOP else ExitReason.STOP_LOSS
-                                exitPrice = if (candle.open >= pos.stopLossPrice!!) {
+                                val isGap = slAtBarOpen != null && candle.open >= slAtBarOpen
+                                exitPrice = if (isGap) {
                                     candle.open * (1.0 + slippageRate) // Gap up fill
                                 } else {
                                     pos.stopLossPrice!! * (1.0 + slippageRate)
@@ -257,7 +276,8 @@ object BacktestEngine {
                             } else {
                                 exitTrade = true
                                 exitReason = ExitReason.TAKE_PROFIT
-                                exitPrice = if (candle.open <= pos.takeProfitPrice!!) {
+                                val isGap = tpAtBarOpen != null && candle.open <= tpAtBarOpen
+                                exitPrice = if (isGap) {
                                     candle.open * (1.0 + slippageRate) // Gap down fill
                                 } else {
                                     pos.takeProfitPrice!! * (1.0 + slippageRate)
@@ -266,7 +286,8 @@ object BacktestEngine {
                         } else if (slHit) {
                             exitTrade = true
                             exitReason = if (pos.isTrailingStop) ExitReason.TRAILING_STOP else ExitReason.STOP_LOSS
-                            exitPrice = if (candle.open >= pos.stopLossPrice!!) {
+                            val isGap = slAtBarOpen != null && candle.open >= slAtBarOpen
+                            exitPrice = if (isGap) {
                                 candle.open * (1.0 + slippageRate) // Gap up past stop
                             } else {
                                 pos.stopLossPrice!! * (1.0 + slippageRate)
@@ -274,20 +295,11 @@ object BacktestEngine {
                         } else if (tpHit) {
                             exitTrade = true
                             exitReason = ExitReason.TAKE_PROFIT
-                            exitPrice = if (candle.open <= pos.takeProfitPrice!!) {
+                            val isGap = tpAtBarOpen != null && candle.open <= tpAtBarOpen
+                            exitPrice = if (isGap) {
                                 candle.open * (1.0 + slippageRate) // Gap down past TP
                             } else {
                                 pos.takeProfitPrice!! * (1.0 + slippageRate)
-                            }
-                        } else if (pos.isTrailingStop) {
-                            if (candle.low < pos.trailingPeakPrice) {
-                                pos.trailingPeakPrice = candle.low
-                                if (risk.stopLossType == StopLossType.TRAILING_PERCENTAGE) {
-                                    pos.stopLossPrice = pos.trailingPeakPrice * (1.0 + (risk.stopLossValue / 100.0))
-                                } else if (risk.stopLossType == StopLossType.TRAILING_ATR) {
-                                    val atrVal = indicators.atr.getOrNull(i) ?: (candle.close * 0.02)
-                                    pos.stopLossPrice = pos.trailingPeakPrice + (risk.stopLossValue * atrVal)
-                                }
                             }
                         }
                     }
@@ -765,21 +777,31 @@ object BacktestEngine {
     private fun precalculateIndicators(candles: List<Candle>, strategy: StrategyDefinition): CalculatedIndicators {
         val cfg = strategy.indicatorConfig
 
-        val fastMa = when {
-            cfg.orbParams.useEmaTrendFilter -> IndicatorCalculators.calculateEMA(candles, cfg.orbParams.emaTrendPeriod)
-            cfg.maParams.useEma -> IndicatorCalculators.calculateEMA(candles, cfg.maParams.fastPeriod)
-            else -> IndicatorCalculators.calculateSMA(candles, cfg.maParams.fastPeriod)
+        val fastMa = when (strategy.strategyType) {
+            StrategyType.OPENING_RANGE_BREAKOUT -> {
+                if (cfg.orbParams.useEmaTrendFilter) IndicatorCalculators.calculateEMA(candles, cfg.orbParams.emaTrendPeriod)
+                else IndicatorCalculators.calculateSMA(candles, cfg.maParams.fastPeriod)
+            }
+            else -> {
+                if (cfg.maParams.useEma) IndicatorCalculators.calculateEMA(candles, cfg.maParams.fastPeriod)
+                else IndicatorCalculators.calculateSMA(candles, cfg.maParams.fastPeriod)
+            }
         }
 
-        val slowMa = when {
-            cfg.trendlineParams.useMaTrendFilter -> IndicatorCalculators.calculateEMA(candles, cfg.trendlineParams.maTrendPeriod)
-            cfg.maParams.useEma -> IndicatorCalculators.calculateEMA(candles, cfg.maParams.slowPeriod)
-            else -> IndicatorCalculators.calculateSMA(candles, cfg.maParams.slowPeriod)
+        val slowMa = when (strategy.strategyType) {
+            StrategyType.TRENDLINE_BREAK, StrategyType.TRENDLINE_BOUNCE -> {
+                if (cfg.trendlineParams.useMaTrendFilter) IndicatorCalculators.calculateEMA(candles, cfg.trendlineParams.maTrendPeriod)
+                else IndicatorCalculators.calculateSMA(candles, cfg.maParams.slowPeriod)
+            }
+            else -> {
+                if (cfg.maParams.useEma) IndicatorCalculators.calculateEMA(candles, cfg.maParams.slowPeriod)
+                else IndicatorCalculators.calculateSMA(candles, cfg.maParams.slowPeriod)
+            }
         }
 
-        val rsiPeriod = when {
-            cfg.orbParams.useRsiFilter -> cfg.orbParams.rsiPeriod
-            cfg.trendlineParams.useRsiFilter -> cfg.trendlineParams.rsiPeriod
+        val rsiPeriod = when (strategy.strategyType) {
+            StrategyType.OPENING_RANGE_BREAKOUT -> if (cfg.orbParams.useRsiFilter) cfg.orbParams.rsiPeriod else cfg.rsiParams.period
+            StrategyType.TRENDLINE_BREAK, StrategyType.TRENDLINE_BOUNCE -> if (cfg.trendlineParams.useRsiFilter) cfg.trendlineParams.rsiPeriod else cfg.rsiParams.period
             else -> cfg.rsiParams.period
         }
         val rsi = IndicatorCalculators.calculateRSI(candles, rsiPeriod)
@@ -943,10 +965,12 @@ object BacktestEngine {
 
             StrategyType.BOLLINGER_REVERSION -> {
                 val bbLowerCurr = ind.bbLower.getOrNull(i) ?: return Pair(false, false)
+                val bbLowerPrev = ind.bbLower.getOrNull(i - 1) ?: return Pair(false, false)
                 val bbUpperCurr = ind.bbUpper.getOrNull(i) ?: return Pair(false, false)
+                val bbUpperPrev = ind.bbUpper.getOrNull(i - 1) ?: return Pair(false, false)
 
-                val longSignal = prev.low < bbLowerCurr && current.close > bbLowerCurr
-                val shortSignal = prev.high > bbUpperCurr && current.close < bbUpperCurr
+                val longSignal = prev.low <= bbLowerPrev && current.close > bbLowerCurr
+                val shortSignal = prev.high >= bbUpperPrev && current.close < bbUpperCurr
                 return Pair(longSignal, shortSignal)
             }
 
@@ -971,8 +995,8 @@ object BacktestEngine {
             }
 
             StrategyType.TURTLE_BREAKOUT -> {
-                val upperPrev = ind.donchianUpper.getOrNull(i - 1) ?: return Pair(false, false)
-                val lowerPrev = ind.donchianLower.getOrNull(i - 1) ?: return Pair(false, false)
+                val upperPrev = ind.donchianUpper.getOrNull(i) ?: return Pair(false, false)
+                val lowerPrev = ind.donchianLower.getOrNull(i) ?: return Pair(false, false)
 
                 val longSignal = current.high > upperPrev
                 val shortSignal = current.low < lowerPrev

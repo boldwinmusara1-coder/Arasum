@@ -157,10 +157,13 @@ fun MarketDataConfigCard(
 
             // Real Data Integrity Badge / Info Bar
             if (dataSourceInfo != null && errorMessage == null) {
+                val isReal = dataSourceInfo.isRealHistorical
+                val statusColor = if (isReal) TvGreen else TvAmber
+                val statusText = if (isReal) "Verified Real Feed • ${dataSourceInfo.provider}" else "Simulated Demo • ${dataSourceInfo.provider}"
                 Surface(
                     shape = RoundedCornerShape(6.dp),
-                    color = TvGreen.copy(alpha = 0.08f),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(TvGreen.copy(alpha = 0.3f))),
+                    color = statusColor.copy(alpha = 0.08f),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(statusColor.copy(alpha = 0.3f))),
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Row(
@@ -175,16 +178,16 @@ fun MarketDataConfigCard(
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Icon(
-                                imageVector = Icons.Default.CheckCircle,
-                                contentDescription = "Verified Real Data",
-                                tint = TvGreen,
+                                imageVector = if (isReal) Icons.Default.CheckCircle else Icons.Default.Info,
+                                contentDescription = if (isReal) "Verified Real Data" else "Demo Data",
+                                tint = statusColor,
                                 modifier = Modifier.size(14.dp)
                             )
                             Column {
                                 Text(
-                                    text = "Verified Real Feed • ${dataSourceInfo.provider}",
+                                    text = statusText,
                                     style = MaterialTheme.typography.labelSmall,
-                                    color = TvGreen,
+                                    color = statusColor,
                                     fontWeight = FontWeight.Bold,
                                     fontSize = 10.sp
                                 )

@@ -270,14 +270,43 @@ object StrategyOptimizer {
     }
 
     /**
-     * Evaluates the strategy across all market regimes to measure robustness.
+     * Evaluates the strategy across all market regimes to measure robustness using supplied real historical data.
+     */
+    fun evaluateAcrossRegimesWithData(
+        strategy: StrategyDefinition,
+        asset: MarketAsset,
+        timeframe: Timeframe,
+        risk: RiskParameters,
+        realDataByRegime: Map<MarketRegime, List<Candle>>
+    ): List<RegimeComparisonResult> {
+        return MarketRegime.values().map { regime ->
+            val candles = realDataByRegime[regime] ?: emptyList()
+            val res = BacktestEngine.runBacktest(candles, asset, regime, timeframe, strategy, risk)
+            RegimeComparisonResult(
+                regime = regime,
+                netProfitPercent = res.metrics.netProfitPercent,
+                benchmarkPercent = res.metrics.benchmarkReturnPercent,
+                winRatePercent = res.metrics.winRatePercent,
+                totalTrades = res.metrics.totalTrades,
+                maxDrawdownPercent = res.metrics.maxDrawdownPercent,
+                profitFactor = res.metrics.profitFactor
+            )
+        }
+    }
+
+    /**
+     * Evaluates the strategy across all market regimes.
      */
     fun evaluateAcrossRegimes(
         strategy: StrategyDefinition,
         asset: MarketAsset,
         timeframe: Timeframe,
-        risk: RiskParameters
+        risk: RiskParameters,
+        realDataByRegime: Map<MarketRegime, List<Candle>>? = null
     ): List<RegimeComparisonResult> {
+        if (realDataByRegime != null) {
+            return evaluateAcrossRegimesWithData(strategy, asset, timeframe, risk, realDataByRegime)
+        }
         return MarketRegime.values().map { regime ->
             val candles = MarketDataProvider.generateHistoricalData(asset, regime, timeframe, 300)
             val res = BacktestEngine.runBacktest(candles, asset, regime, timeframe, strategy, risk)

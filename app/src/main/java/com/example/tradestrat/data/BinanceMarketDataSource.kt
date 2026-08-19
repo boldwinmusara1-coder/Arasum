@@ -67,7 +67,7 @@ class BinanceMarketDataSource(
         val limit = 1000 // Binance max per call
         var hasMore = true
         var attempts = 0
-        val maxBatches = 5 // Fetch up to 5,000 historical candles
+        val maxBatches = 150 // Extended pagination up to 150,000 candles for multi-year high frequency backtests
 
         while (hasMore && attempts < maxBatches && currentStart < endTimeMs) {
             attempts++
