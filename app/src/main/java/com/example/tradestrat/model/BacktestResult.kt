@@ -109,6 +109,7 @@ data class BacktestResult(
     val equityCurve: List<EquityPoint>,
     val signalMarkers: List<SignalMarker>,
     val metrics: BacktestMetrics,
+    val smcMetrics: SmcMetrics? = null,
     val dataSource: DataSourceInfo = DataSourceInfo(
         provider = "Real Historical API",
         symbol = asset.symbol,

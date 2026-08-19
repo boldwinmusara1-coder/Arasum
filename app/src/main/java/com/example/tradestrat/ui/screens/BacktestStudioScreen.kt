@@ -324,6 +324,21 @@ fun BacktestStudioScreen(
                 )
             }
 
+            // SMC / ICT Concepts Configuration & Audit Card
+            item {
+                SmcConceptConfigCard(
+                    strategy = selectedStrategy,
+                    onStrategyChanged = { updatedStrategy ->
+                        viewModel.setStrategy(updatedStrategy)
+                    },
+                    smcMetrics = currentResult?.smcMetrics,
+                    backtestMetrics = currentResult?.metrics,
+                    onApplyAndRun = {
+                        viewModel.runBacktest()
+                    }
+                )
+            }
+
             // Performance Metrics Overview
             currentResult?.let { res ->
                 item {

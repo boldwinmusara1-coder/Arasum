@@ -112,6 +112,16 @@ class BacktestViewModel(application: Application) : AndroidViewModel(application
         runBacktest()
     }
 
+    fun updateSmcConfig(smcConfig: SmcConfig) {
+        val current = _selectedStrategy.value
+        val updated = current.copy(
+            strategyType = StrategyType.SMC_ICT_CONCEPTS,
+            indicatorConfig = current.indicatorConfig.copy(smcConfig = smcConfig)
+        )
+        _selectedStrategy.value = updated
+        runBacktest()
+    }
+
     fun setProvider(provider: ProviderSelection) {
         _selectedProvider.value = provider
         runBacktest()

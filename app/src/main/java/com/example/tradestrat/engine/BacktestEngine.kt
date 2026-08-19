@@ -57,6 +57,9 @@ object BacktestEngine {
         // ORB Session Tracker
         val orbSessionState = OrbSessionTracker(strategy.indicatorConfig.orbParams, timeframe)
 
+        // SMC / ICT Concepts Engine
+        val smcEngine = SmcEngine(strategy.indicatorConfig.smcConfig)
+
         for (i in candles.indices) {
             val candle = candles[i]
 
@@ -337,7 +340,7 @@ object BacktestEngine {
             // =========================================================================
             // STEP 3: Strategy Signal Evaluation at Bar Close
             // =========================================================================
-            val (longSignal, shortSignal) = evaluateSignal(strategy, i, candles, indicators, orbSessionState)
+            val (longSignal, shortSignal) = evaluateSignal(strategy, i, candles, indicators, orbSessionState, smcEngine)
 
             if (risk.executionModel == ExecutionModel.REALISTIC) {
                 // Realistic Execution: Signal confirmed at bar close -> generate order for NEXT bar open
@@ -518,6 +521,7 @@ object BacktestEngine {
             equityCurve = equityCurve,
             signalMarkers = signalMarkers,
             metrics = metrics,
+            smcMetrics = if (strategy.strategyType == StrategyType.SMC_ICT_CONCEPTS) smcEngine.getMetrics() else null,
             dataSource = dsInfo
         )
     }
@@ -919,7 +923,8 @@ object BacktestEngine {
         i: Int,
         candles: List<Candle>,
         ind: CalculatedIndicators,
-        orbTracker: OrbSessionTracker
+        orbTracker: OrbSessionTracker,
+        smcEngine: SmcEngine? = null
     ): Pair<Boolean, Boolean> {
         if (i < 2) return Pair(false, false)
 
@@ -1221,6 +1226,11 @@ object BacktestEngine {
 
                 val shortSignal = trendBearish && rsiBearish && macdTurningDown
                 return Pair(longSignal, shortSignal)
+            }
+            StrategyType.SMC_ICT_CONCEPTS -> {
+                val engine = smcEngine ?: SmcEngine(strategy.indicatorConfig.smcConfig)
+                val smcEval = engine.evaluateBar(i, candles, ind.atr)
+                return Pair(smcEval.longSignal, smcEval.shortSignal)
             }
         }
     }

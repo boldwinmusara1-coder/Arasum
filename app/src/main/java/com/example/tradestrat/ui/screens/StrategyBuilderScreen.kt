@@ -503,6 +503,19 @@ fun StrategyBuilderScreen(
                         )
                     }
                 }
+                StrategyType.SMC_ICT_CONCEPTS -> {
+                    item {
+                        SmcConceptConfigCard(
+                            strategy = currentStrategy,
+                            onStrategyChanged = { updated ->
+                                currentStrategy = updated
+                                viewModel.setStrategy(updated)
+                            },
+                            smcMetrics = null,
+                            backtestMetrics = null
+                        )
+                    }
+                }
             }
 
             // Apply & Run CTA

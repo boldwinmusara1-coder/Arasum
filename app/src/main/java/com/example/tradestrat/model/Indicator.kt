@@ -10,7 +10,8 @@ enum class IndicatorType(val displayName: String, val shortName: String, val cat
     SUPERTREND("Supertrend Indicator", "ST", "Trend"),
     DONCHIAN("Donchian Channels", "DC", "Breakout"),
     ORB("Opening Range Breakout", "ORB", "Breakout"),
-    TRENDLINE("Swing Pivot Trendlines", "TL", "Price Action")
+    TRENDLINE("Swing Pivot Trendlines", "TL", "Price Action"),
+    SMC("Smart Money Concepts", "SMC", "Price Action")
 }
 
 data class MovingAverageParams(
@@ -85,5 +86,6 @@ data class IndicatorConfig(
     val supertrendParams: SupertrendParams = SupertrendParams(),
     val donchianParams: DonchianParams = DonchianParams(),
     val orbParams: OrbParams = OrbParams(),
-    val trendlineParams: TrendlineParams = TrendlineParams()
+    val trendlineParams: TrendlineParams = TrendlineParams(),
+    val smcConfig: SmcConfig = SmcConfig()
 )

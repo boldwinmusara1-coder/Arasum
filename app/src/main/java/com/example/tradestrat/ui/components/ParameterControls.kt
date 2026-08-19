@@ -69,6 +69,59 @@ fun IntParameterStepper(
 }
 
 @Composable
+fun DoubleParameterStepper(
+    title: String,
+    value: Double,
+    range: ClosedFloatingPointRange<Double>,
+    onValueChange: (Double) -> Unit,
+    modifier: Modifier = Modifier,
+    step: Double = 0.1,
+    unit: String = ""
+) {
+    Surface(
+        modifier = modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(16.dp),
+        color = BentoCardElevated
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 14.dp, vertical = 10.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Text(title, style = MaterialTheme.typography.bodyMedium, color = BentoTextPrimary)
+                Text(
+                    text = String.format(java.util.Locale.US, "%.2f %s", value, unit),
+                    style = MaterialTheme.typography.titleMedium,
+                    color = BentoLilac,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                IconButton(
+                    onClick = { if (value - step >= range.start - 0.0001) onValueChange(Math.round((value - step) * 100.0) / 100.0) },
+                    enabled = value - step >= range.start - 0.0001,
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Icon(Icons.Default.Remove, contentDescription = "Decrease", tint = BentoTextSecondary, modifier = Modifier.size(16.dp))
+                }
+
+                IconButton(
+                    onClick = { if (value + step <= range.endInclusive + 0.0001) onValueChange(Math.round((value + step) * 100.0) / 100.0) },
+                    enabled = value + step <= range.endInclusive + 0.0001,
+                    modifier = Modifier.size(34.dp)
+                ) {
+                    Icon(Icons.Default.Add, contentDescription = "Increase", tint = BentoLilac, modifier = Modifier.size(16.dp))
+                }
+            }
+        }
+    }
+}
+
+@Composable
 fun DoubleParameterSlider(
     title: String,
     value: Double,

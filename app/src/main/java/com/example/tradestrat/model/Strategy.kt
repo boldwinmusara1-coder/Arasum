@@ -11,7 +11,8 @@ enum class StrategyType(val title: String, val subtitle: String, val badge: Stri
     OPENING_RANGE_BREAKOUT("Opening Range Breakout (ORB)", "Trades breakout of initial session price range with volume surge", "Price Action / Breakout"),
     TRENDLINE_BREAK("Trendline Break", "Enters when price breaks through swing pivot support/resistance trendlines", "Price Action / Breakout"),
     TRENDLINE_BOUNCE("Trendline Bounce", "Buys pullbacks bouncing off support trendlines with rejection candles", "Support & Resistance"),
-    MULTI_CONFLUENCE("Multi-Indicator Confluence", "Trend filter + RSI pullback + ATR stop confirmation", "Advanced Confluence")
+    MULTI_CONFLUENCE("Multi-Indicator Confluence", "Trend filter + RSI pullback + ATR stop confirmation", "Advanced Confluence"),
+    SMC_ICT_CONCEPTS("SMC / ICT Concepts", "Institutional smart money concepts: BOS, CHOCH, FVG, Order Blocks, Liquidity Sweeps", "Institutional Price Action")
 }
 
 data class StrategyDefinition(
@@ -114,6 +115,97 @@ data class StrategyDefinition(
                     maParams = MovingAverageParams(fastPeriod = 20, slowPeriod = 50, useEma = true),
                     rsiParams = RsiParams(period = 14, oversoldThreshold = 45.0, overboughtThreshold = 65.0),
                     macdParams = MacdParams(fastPeriod = 12, slowPeriod = 26, signalPeriod = 9)
+                )
+            ),
+            StrategyDefinition(
+                id = "preset_smc_structure_shift",
+                name = "SMC: Market Structure Shift (BOS + CHOCH)",
+                description = "Trades trend changes on Break of Structure (BOS) and Change of Character (CHOCH / MSS) with confirmed pivot breaks.",
+                strategyType = StrategyType.SMC_ICT_CONCEPTS,
+                indicatorConfig = IndicatorConfig(
+                    smcConfig = SmcConfig(
+                        useBos = true,
+                        useChoch = true,
+                        useLiquiditySweep = false,
+                        useFvg = false,
+                        useOrderBlock = false,
+                        minConfluences = 1
+                    )
+                )
+            ),
+            StrategyDefinition(
+                id = "preset_smc_liquidity_sweep",
+                name = "SMC: Liquidity Sweep & Reversal",
+                description = "Identifies false breakouts beyond key swing highs/lows (stop hunts) where price wicks out liquidity and closes back in range.",
+                strategyType = StrategyType.SMC_ICT_CONCEPTS,
+                indicatorConfig = IndicatorConfig(
+                    smcConfig = SmcConfig(
+                        useBos = false,
+                        useChoch = false,
+                        useLiquiditySweep = true,
+                        useFvg = false,
+                        useOrderBlock = false,
+                        sweepLookback = 10,
+                        sweepWickMinPct = 0.15,
+                        minConfluences = 1
+                    )
+                )
+            ),
+            StrategyDefinition(
+                id = "preset_smc_fvg_retest",
+                name = "SMC: Fair Value Gap (FVG) Retest",
+                description = "Captures institutional imbalance retests when price returns to fill 3-candle Fair Value Gaps in the direction of order flow.",
+                strategyType = StrategyType.SMC_ICT_CONCEPTS,
+                indicatorConfig = IndicatorConfig(
+                    smcConfig = SmcConfig(
+                        useBos = true,
+                        useChoch = false,
+                        useLiquiditySweep = false,
+                        useFvg = true,
+                        useOrderBlock = false,
+                        fvgMinGapAtrMultiple = 0.3,
+                        fvgMitigationType = FvgMitigationType.TOUCH,
+                        minConfluences = 1
+                    )
+                )
+            ),
+            StrategyDefinition(
+                id = "preset_smc_order_block",
+                name = "SMC: Order Block Retest",
+                description = "Trades pullback entries into institutional Order Blocks created prior to structural displacement moves.",
+                strategyType = StrategyType.SMC_ICT_CONCEPTS,
+                indicatorConfig = IndicatorConfig(
+                    smcConfig = SmcConfig(
+                        useBos = true,
+                        useChoch = false,
+                        useLiquiditySweep = false,
+                        useFvg = false,
+                        useOrderBlock = true,
+                        obLookback = 15,
+                        obMitigationRequired = true,
+                        minConfluences = 1
+                    )
+                )
+            ),
+            StrategyDefinition(
+                id = "preset_smc_ict_full_confluence",
+                name = "SMC: Full ICT Multi-Confluence",
+                description = "High-conviction setup requiring Session filter + BOS/CHOCH structure alignment + Order Block / FVG mitigation in Discount/Premium.",
+                strategyType = StrategyType.SMC_ICT_CONCEPTS,
+                indicatorConfig = IndicatorConfig(
+                    smcConfig = SmcConfig(
+                        useBos = true,
+                        useChoch = true,
+                        useLiquiditySweep = true,
+                        useFvg = true,
+                        useOrderBlock = true,
+                        useBreakerBlock = true,
+                        usePremiumDiscount = true,
+                        useDisplacement = true,
+                        useEqualHighsLows = true,
+                        useSessionFilter = false,
+                        minConfluences = 2
+                    )
                 )
             )
         )
