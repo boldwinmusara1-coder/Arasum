@@ -172,6 +172,95 @@ private fun OrbThresholdControls(
     val cfg = strategy.indicatorConfig.orbParams
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        // Section: Session & Timezone Configuration
+        Text(
+            text = "Session Schedule & Timezone (Causal Boundary)",
+            style = MaterialTheme.typography.labelSmall,
+            color = BentoTextSecondary,
+            fontWeight = FontWeight.Bold
+        )
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Session Timezone", style = MaterialTheme.typography.bodySmall, color = BentoTextPrimary)
+            Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                listOf("America/New_York", "UTC", "Europe/London", "Asia/Tokyo").forEach { tz ->
+                    val isSelected = cfg.sessionTimezone == tz
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = {
+                            onStrategyChanged(
+                                strategy.copy(
+                                    indicatorConfig = strategy.indicatorConfig.copy(
+                                        orbParams = cfg.copy(sessionTimezone = tz)
+                                    )
+                                )
+                            )
+                        },
+                        label = {
+                            Text(
+                                when (tz) {
+                                    "America/New_York" -> "NY (EST)"
+                                    "UTC" -> "UTC"
+                                    "Europe/London" -> "LON (GMT)"
+                                    "Asia/Tokyo" -> "TKY (JST)"
+                                    else -> tz
+                                },
+                                fontSize = 10.sp
+                            )
+                        },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = BentoLilacContainer,
+                            selectedLabelColor = BentoLilacText,
+                            containerColor = BentoCardElevated,
+                            labelColor = BentoTextSecondary
+                        ),
+                        shape = CircleShape,
+                        modifier = Modifier.height(28.dp)
+                    )
+                }
+            }
+        }
+
+        IntParameterStepper(
+            title = "Opening Range Duration",
+            value = cfg.openingRangeMinutes,
+            range = 5..120,
+            step = 5,
+            unit = "min window",
+            onValueChange = { newVal ->
+                onStrategyChanged(
+                    strategy.copy(
+                        indicatorConfig = strategy.indicatorConfig.copy(
+                            orbParams = cfg.copy(openingRangeMinutes = newVal)
+                        )
+                    )
+                )
+            }
+        )
+
+        IntParameterStepper(
+            title = "Session Start Hour",
+            value = cfg.sessionStartHour,
+            range = 0..23,
+            step = 1,
+            unit = ":00 local",
+            onValueChange = { newVal ->
+                onStrategyChanged(
+                    strategy.copy(
+                        indicatorConfig = strategy.indicatorConfig.copy(
+                            orbParams = cfg.copy(sessionStartHour = newVal)
+                        )
+                    )
+                )
+            }
+        )
+
+        Divider(color = BentoBorder, thickness = 0.8.dp)
+
         // Section: Base ORB
         Text(
             text = "Opening Range Window & Volume Surge",
@@ -354,6 +443,38 @@ private fun TrendlineBounceThresholdControls(
             }
         )
 
+        IntParameterStepper(
+            title = "Causal Pivot Strength (Confirmation Lag)",
+            value = cfg.pivotStrength,
+            range = 1..10,
+            unit = "bars",
+            onValueChange = { newVal ->
+                onStrategyChanged(
+                    strategy.copy(
+                        indicatorConfig = strategy.indicatorConfig.copy(
+                            trendlineParams = cfg.copy(pivotStrength = newVal)
+                        )
+                    )
+                )
+            }
+        )
+
+        IntParameterStepper(
+            title = "Minimum Trendline Touches",
+            value = cfg.minTouches,
+            range = 2..5,
+            unit = "touches",
+            onValueChange = { newVal ->
+                onStrategyChanged(
+                    strategy.copy(
+                        indicatorConfig = strategy.indicatorConfig.copy(
+                            trendlineParams = cfg.copy(minTouches = newVal)
+                        )
+                    )
+                )
+            }
+        )
+
         DoubleParameterSlider(
             title = "Proximity Buffer Threshold",
             value = cfg.confirmationThresholdPct,
@@ -514,6 +635,38 @@ private fun TrendlineBreakThresholdControls(
                     strategy.copy(
                         indicatorConfig = strategy.indicatorConfig.copy(
                             trendlineParams = cfg.copy(pivotLookback = newVal)
+                        )
+                    )
+                )
+            }
+        )
+
+        IntParameterStepper(
+            title = "Causal Pivot Strength (Confirmation Lag)",
+            value = cfg.pivotStrength,
+            range = 1..10,
+            unit = "bars",
+            onValueChange = { newVal ->
+                onStrategyChanged(
+                    strategy.copy(
+                        indicatorConfig = strategy.indicatorConfig.copy(
+                            trendlineParams = cfg.copy(pivotStrength = newVal)
+                        )
+                    )
+                )
+            }
+        )
+
+        IntParameterStepper(
+            title = "Minimum Trendline Touches",
+            value = cfg.minTouches,
+            range = 2..5,
+            unit = "touches",
+            onValueChange = { newVal ->
+                onStrategyChanged(
+                    strategy.copy(
+                        indicatorConfig = strategy.indicatorConfig.copy(
+                            trendlineParams = cfg.copy(minTouches = newVal)
                         )
                     )
                 )

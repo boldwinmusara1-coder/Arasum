@@ -30,7 +30,9 @@ data class DataSourceInfo(
     val lastRefreshTime: Long = System.currentTimeMillis(),
     val isRealHistorical: Boolean = true,
     val validationStatus: String = "VALIDATED_INTEGRITY_PASSED",
-    val intrabarExecutionRule: String = "Conservative (Stop Loss First)"
+    val unexpectedGapsCount: Int = 0,
+    val intrabarExecutionRule: String = "Conservative (Stop Loss First)",
+    val executionModel: String = "Realistic (Next Bar Open)"
 )
 
 data class BacktestMetrics(

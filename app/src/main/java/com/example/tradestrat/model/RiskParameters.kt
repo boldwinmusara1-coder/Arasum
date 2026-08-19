@@ -1,5 +1,18 @@
 package com.example.tradestrat.model
 
+enum class ExecutionModel(val label: String, val shortLabel: String, val description: String) {
+    REALISTIC(
+        label = "Realistic (Next Bar Open)",
+        shortLabel = "Next Open (Causal)",
+        description = "Signal confirmed at Candle N Close; entry order executes at Candle N+1 Open with realistic market slippage and commission. Completely eliminates look-ahead bias."
+    ),
+    IDEALIZED(
+        label = "Idealized (Same Bar Close)",
+        shortLabel = "Same Close",
+        description = "Signal evaluated and filled immediately at Candle N Close. Assumes zero execution latency."
+    )
+}
+
 enum class PositionSizingMode(val displayName: String, val description: String) {
     PERCENT_EQUITY("Percent of Portfolio", "Allocates a fixed percentage of current account equity per trade"),
     FIXED_DOLLAR("Fixed Dollar Amount", "Allocates a constant USD amount per position"),
@@ -53,5 +66,6 @@ data class RiskParameters(
     val leverage: Double = 1.0, // 1.0x to 10.0x
     val allowShorting: Boolean = true,
     val maxDrawdownCircuitBreakerPct: Double = 30.0, // Pause trading if drawdown > 30%
+    val executionModel: ExecutionModel = ExecutionModel.REALISTIC, // Default is REALISTIC (No look-ahead bias)
     val intrabarExecution: IntrabarExecutionAssumption = IntrabarExecutionAssumption.PESSIMISTIC_STOP_FIRST
 )

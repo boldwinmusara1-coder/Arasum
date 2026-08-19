@@ -9,6 +9,9 @@ data class DataValidationReport(
     val firstCandleTimestamp: Long,
     val lastCandleTimestamp: Long,
     val duplicatesRemovedCount: Int,
+    val unexpectedGapsCount: Int = 0,
+    val expectedGapsCount: Int = 0,
+    val lastClosedCandleTimestamp: Long = 0L,
     val violations: List<String>
 )
 
@@ -17,13 +20,15 @@ object MarketDataValidator {
     /**
      * Validates and cleanses raw market candle data.
      * Ensures strict chronological sorting, removes duplicate timestamps,
-     * and verifies that all OHLC relationships (High >= Open/Close/Low, Low <= Open/Close/High, Volume >= 0) hold true.
+     * filters out incomplete/future candles, and verifies that all OHLC relationships hold true.
+     * Classifies gaps into EXPECTED GAP (weekends/market closures) and UNEXPECTED DATA GAP.
      */
     fun validateAndClean(
         rawCandles: List<Candle>,
         timeframe: Timeframe,
         expectedStartTimeMs: Long? = null,
-        expectedEndTimeMs: Long? = null
+        expectedEndTimeMs: Long? = null,
+        currentTimeMs: Long = System.currentTimeMillis()
     ): Pair<List<Candle>, DataValidationReport> {
         val violations = mutableListOf<String>()
 
@@ -36,23 +41,38 @@ object MarketDataValidator {
                     firstCandleTimestamp = 0L,
                     lastCandleTimestamp = 0L,
                     duplicatesRemovedCount = 0,
+                    unexpectedGapsCount = 0,
+                    expectedGapsCount = 0,
+                    lastClosedCandleTimestamp = 0L,
                     violations = listOf("Candle dataset is empty. No historical data received from API.")
                 )
             )
         }
 
-        // 1. Remove duplicate timestamps while keeping the latest entry
-        val initialCount = rawCandles.size
-        val deduplicated = rawCandles.distinctBy { it.timestamp }
+        // 1. Filter out incomplete / future candles (close time must be <= currentTimeMs)
+        val timeframeDurationMs = timeframe.minutes * 60 * 1000L
+        val closedCandles = rawCandles.filter { c ->
+            val candleCloseTime = c.timestamp + timeframeDurationMs
+            candleCloseTime <= currentTimeMs + 60000L // 1-minute clock skew tolerance
+        }
+
+        val incompleteFiltered = rawCandles.size - closedCandles.size
+        if (incompleteFiltered > 0) {
+            violations.add("Filtered out $incompleteFiltered incomplete / unclosed current bar(s).")
+        }
+
+        // 2. Remove duplicate timestamps while keeping the latest entry
+        val initialCount = closedCandles.size
+        val deduplicated = closedCandles.distinctBy { it.timestamp }
         val duplicatesRemoved = initialCount - deduplicated.size
         if (duplicatesRemoved > 0) {
             violations.add("Detected and purged $duplicatesRemoved duplicate candle timestamp(s).")
         }
 
-        // 2. Sort chronologically
+        // 3. Sort chronologically
         val sorted = deduplicated.sortedBy { it.timestamp }
 
-        // 3. Validate OHLC price integrity and positive volume
+        // 4. Validate OHLC price integrity and positive volume
         val cleanCandles = mutableListOf<Candle>()
         var ohlcViolationCount = 0
 
@@ -83,24 +103,40 @@ object MarketDataValidator {
             violations.add("Filtered out $ohlcViolationCount invalid candle(s) violating OHLC bounds (High >= Open/Close/Low, Low <= Open/Close/High).")
         }
 
-        // 4. Verify chronological progression
-        var chronologicalError = false
-        for (i in 1 until cleanCandles.size) {
-            if (cleanCandles[i].timestamp <= cleanCandles[i - 1].timestamp) {
-                chronologicalError = true
-                break
+        // 5. Gap Classification: EXPECTED GAP vs UNEXPECTED DATA GAP
+        var unexpectedGaps = 0
+        var expectedGaps = 0
+
+        if (cleanCandles.size >= 2) {
+            for (i in 1 until cleanCandles.size) {
+                val prevTs = cleanCandles[i - 1].timestamp
+                val currTs = cleanCandles[i].timestamp
+                val deltaMs = currTs - prevTs
+
+                if (deltaMs > timeframeDurationMs) {
+                    // Check if gap is due to standard weekend (>= 48h) or overnight closure
+                    val isWeekendOrMarketClosure = deltaMs >= 40 * 60 * 60 * 1000L // > 40 hours
+                    if (isWeekendOrMarketClosure) {
+                        expectedGaps++
+                    } else {
+                        unexpectedGaps++
+                    }
+                }
             }
         }
-        if (chronologicalError) {
-            violations.add("Chronological sequence anomaly detected in cleansed candles.")
+
+        if (unexpectedGaps > 0) {
+            violations.add("Detected $unexpectedGaps unexpected data gap(s) during active trading hours.")
         }
 
-        // 5. Verify minimum candle depth
+        // 6. Verify minimum historical candle depth
         if (cleanCandles.size < 10) {
             violations.add("Insufficient historical depth: got ${cleanCandles.size} clean candles, minimum 10 required for indicator calculation.")
         }
 
-        val isValid = cleanCandles.size >= 10 && !chronologicalError
+        val isValid = cleanCandles.size >= 10
+
+        val lastClosedTimestamp = cleanCandles.lastOrNull()?.let { it.timestamp + timeframeDurationMs } ?: 0L
 
         val report = DataValidationReport(
             isValid = isValid,
@@ -108,6 +144,9 @@ object MarketDataValidator {
             firstCandleTimestamp = cleanCandles.firstOrNull()?.timestamp ?: 0L,
             lastCandleTimestamp = cleanCandles.lastOrNull()?.timestamp ?: 0L,
             duplicatesRemovedCount = duplicatesRemoved,
+            unexpectedGapsCount = unexpectedGaps,
+            expectedGapsCount = expectedGaps,
+            lastClosedCandleTimestamp = lastClosedTimestamp,
             violations = violations
         )
 

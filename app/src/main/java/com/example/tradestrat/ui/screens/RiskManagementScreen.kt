@@ -312,6 +312,73 @@ fun RiskManagementScreen(
                             }
                         )
 
+                        Text("Order Execution Model (Look-Ahead Bias Elimination)", style = MaterialTheme.typography.bodySmall, color = BentoTextSecondary)
+
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            ExecutionModel.values().forEach { model ->
+                                val isSelected = currentRisk.executionModel == model
+                                Surface(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .clickable {
+                                            val updated = currentRisk.copy(executionModel = model)
+                                            currentRisk = updated
+                                            viewModel.updateRiskParameters(updated)
+                                        }
+                                        .testTag("exec_model_${model.name}"),
+                                    shape = RoundedCornerShape(12.dp),
+                                    color = if (isSelected) BentoLilacContainer else BentoCardElevated,
+                                    border = if (isSelected) CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BentoLilac)) else null
+                                ) {
+                                    Column(modifier = Modifier.padding(12.dp)) {
+                                        Row(
+                                            modifier = Modifier.fillMaxWidth(),
+                                            horizontalArrangement = Arrangement.SpaceBetween,
+                                            verticalAlignment = Alignment.CenterVertically
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                                Text(
+                                                    text = model.label,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = if (isSelected) BentoLilacText else BentoTextPrimary,
+                                                    style = MaterialTheme.typography.bodyMedium
+                                                )
+                                                if (model == ExecutionModel.REALISTIC) {
+                                                    Spacer(modifier = Modifier.width(6.dp))
+                                                    Surface(
+                                                        shape = CircleShape,
+                                                        color = BentoGreenContainer
+                                                    ) {
+                                                        Text(
+                                                            text = "RECOMMENDED",
+                                                            color = BentoGreenText,
+                                                            fontSize = 9.sp,
+                                                            fontWeight = FontWeight.Bold,
+                                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                                        )
+                                                    }
+                                                }
+                                            }
+                                            if (isSelected) {
+                                                Icon(
+                                                    imageVector = Icons.Default.CheckCircle,
+                                                    contentDescription = "Selected",
+                                                    tint = BentoLilacText,
+                                                    modifier = Modifier.size(16.dp)
+                                                )
+                                            }
+                                        }
+                                        Text(
+                                            text = model.description,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = BentoTextMuted,
+                                            fontSize = 10.sp
+                                        )
+                                    }
+                                }
+                            }
+                        }
+
                         Text("Intrabar Execution Assumption (SL vs TP Conflict)", style = MaterialTheme.typography.bodySmall, color = BentoTextSecondary)
 
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {

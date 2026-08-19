@@ -55,6 +55,8 @@ val BentoLilacText = TvBlueText
 val BentoLilacGlow = TvBlueGlow
 
 val BentoGreen = TvGreen
+val BentoGreenContainer = Color(0xFF0D3E35)
+val BentoGreenText = Color(0xFFA3EAD8)
 val BentoGreenGlow = TvGreenGlow
 val BentoRed = TvRed
 val BentoRedGlow = TvRedGlow

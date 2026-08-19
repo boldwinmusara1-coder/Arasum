@@ -46,7 +46,13 @@ data class DonchianParams(
 )
 
 data class OrbParams(
-    val rangeBars: Int = 15,
+    val sessionTimezone: String = "America/New_York",
+    val sessionStartHour: Int = 9,
+    val sessionStartMinute: Int = 30,
+    val openingRangeMinutes: Int = 30, // Duration of opening range in minutes (e.g. 15, 30, 45, 60)
+    val sessionEndHour: Int = 16,
+    val sessionEndMinute: Int = 0,
+    val rangeBars: Int = 15, // Fallback bar count if intraday timestamp is not sub-hourly
     val volumeMultiplier: Double = 1.2,
     val useEmaTrendFilter: Boolean = true,
     val emaTrendPeriod: Int = 50,
@@ -56,8 +62,13 @@ data class OrbParams(
 )
 
 data class TrendlineParams(
-    val pivotLookback: Int = 10,
-    val confirmationThresholdPct: Double = 0.3,
+    val pivotStrength: Int = 5, // Requires 5 bars left and 5 bars right strictly confirmed
+    val pivotLookback: Int = 10, // Legacy lookback compatibility
+    val minTouches: Int = 2,
+    val maxLineAge: Int = 120, // Max candle bars a trendline remains valid
+    val confirmationThresholdPct: Double = 0.25, // % price confirmation beyond trendline
+    val retestRequired: Boolean = false,
+    val retestTolerancePct: Double = 0.4,
     val useRsiFilter: Boolean = true,
     val rsiPeriod: Int = 14,
     val rsiOversoldThreshold: Double = 35.0,

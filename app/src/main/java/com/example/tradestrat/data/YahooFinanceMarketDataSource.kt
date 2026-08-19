@@ -130,7 +130,7 @@ class YahooFinanceMarketDataSource(
                 val closes = quote.optJSONArray("close")
                 val volumes = quote.optJSONArray("volume")
 
-                if (timestamps == null || opens == null || closes == null) {
+                if (timestamps == null || opens == null || highs == null || lows == null || closes == null) {
                     return@withContext Result.failure(IOException("Missing candlestick arrays in Yahoo response"))
                 }
 
@@ -166,7 +166,13 @@ class YahooFinanceMarketDataSource(
                     )
                 }
 
-                Result.success(candles)
+                val finalCandles = if (timeframe == Timeframe.H4) {
+                    TimeframeAggregator.aggregate(candles, Timeframe.H1, Timeframe.H4)
+                } else {
+                    candles
+                }
+
+                Result.success(finalCandles)
             }
         } catch (e: Exception) {
             Result.failure(e)

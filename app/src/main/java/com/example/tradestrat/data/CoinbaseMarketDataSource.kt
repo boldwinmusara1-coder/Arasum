@@ -32,7 +32,7 @@ class CoinbaseMarketDataSource(
         return when (tf) {
             Timeframe.M15 -> 900
             Timeframe.H1 -> 3600
-            Timeframe.H4 -> 21600 // Coinbase 6h
+            Timeframe.H4 -> 3600 // Request 1h and aggregate into true 4h
             Timeframe.D1 -> 86400
         }
     }
@@ -55,58 +55,93 @@ class CoinbaseMarketDataSource(
     ): Result<List<Candle>> = withContext(Dispatchers.IO) {
         val productId = mapProductId(asset)
         val granularity = mapGranularity(timeframe)
+        val stepMs = 300L * granularity * 1000L // 300 candles per batch
         val isoFormat = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss'Z'", Locale.US).apply {
             timeZone = TimeZone.getTimeZone("UTC")
         }
 
-        val startIso = isoFormat.format(Date(startTimeMs))
-        val endIso = isoFormat.format(Date(endTimeMs))
-        val url = "https://api.exchange.coinbase.com/products/$productId/candles?granularity=$granularity&start=$startIso&end=$endIso"
-
-        val request = Request.Builder()
-            .url(url)
-            .addHeader("User-Agent", "TradeStrat-Backtester/1.0")
-            .build()
+        val allCandles = mutableListOf<Candle>()
+        var currentStart = startTimeMs
 
         try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    val code = response.code
-                    val errorBody = response.body?.string() ?: ""
-                    return@withContext Result.failure(
-                        IOException("Coinbase API HTTP $code: $errorBody")
-                    )
-                }
+            while (currentStart < endTimeMs) {
+                val currentEnd = kotlin.math.min(currentStart + stepMs, endTimeMs)
+                val startIso = isoFormat.format(Date(currentStart))
+                val endIso = isoFormat.format(Date(currentEnd))
+                val url = "https://api.exchange.coinbase.com/products/$productId/candles?granularity=$granularity&start=$startIso&end=$endIso"
 
-                val body = response.body?.string() ?: throw IOException("Empty response from Coinbase API")
-                val jsonArray = JSONArray(body)
-                val candles = mutableListOf<Candle>()
+                val request = Request.Builder()
+                    .url(url)
+                    .addHeader("User-Agent", "TradeStrat-Backtester/1.0")
+                    .build()
 
-                for (i in 0 until jsonArray.length()) {
-                    val item = jsonArray.getJSONArray(i)
-                    val epochSeconds = item.getLong(0)
-                    val low = item.getDouble(1)
-                    val high = item.getDouble(2)
-                    val open = item.getDouble(3)
-                    val close = item.getDouble(4)
-                    val volume = item.getDouble(5)
+                client.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) {
+                        val code = response.code
+                        val errorBody = response.body?.string() ?: ""
+                        if (allCandles.isEmpty()) {
+                            return@withContext Result.failure(
+                                IOException("Coinbase API HTTP $code: $errorBody")
+                            )
+                        } else {
+                            currentStart = endTimeMs // Stop pagination gracefully on partial success
+                            return@use
+                        }
+                    }
 
-                    candles.add(
-                        Candle(
-                            timestamp = epochSeconds * 1000L,
-                            open = open,
-                            high = high,
-                            low = low,
-                            close = close,
-                            volume = volume
+                    val body = response.body?.string() ?: throw IOException("Empty response from Coinbase API")
+                    val jsonArray = JSONArray(body)
+
+                    if (jsonArray.length() == 0) {
+                        currentStart = endTimeMs
+                        return@use
+                    }
+
+                    for (i in 0 until jsonArray.length()) {
+                        val item = jsonArray.getJSONArray(i)
+                        val epochSeconds = item.getLong(0)
+                        val low = item.getDouble(1)
+                        val high = item.getDouble(2)
+                        val open = item.getDouble(3)
+                        val close = item.getDouble(4)
+                        val volume = item.getDouble(5)
+
+                        allCandles.add(
+                            Candle(
+                                timestamp = epochSeconds * 1000L,
+                                open = open,
+                                high = high,
+                                low = low,
+                                close = close,
+                                volume = volume
+                            )
                         )
-                    )
+                    }
                 }
 
-                Result.success(candles)
+                currentStart = currentEnd + 1000L
             }
+
+            val deduplicated = allCandles.distinctBy { it.timestamp }.sortedBy { it.timestamp }
+            val finalCandles = if (timeframe == Timeframe.H4) {
+                TimeframeAggregator.aggregate(deduplicated, Timeframe.H1, Timeframe.H4)
+            } else {
+                deduplicated
+            }
+
+            Result.success(finalCandles)
         } catch (e: Exception) {
-            Result.failure(e)
+            if (allCandles.isNotEmpty()) {
+                val deduplicated = allCandles.distinctBy { it.timestamp }.sortedBy { it.timestamp }
+                val finalCandles = if (timeframe == Timeframe.H4) {
+                    TimeframeAggregator.aggregate(deduplicated, Timeframe.H1, Timeframe.H4)
+                } else {
+                    deduplicated
+                }
+                Result.success(finalCandles)
+            } else {
+                Result.failure(e)
+            }
         }
     }
 }
