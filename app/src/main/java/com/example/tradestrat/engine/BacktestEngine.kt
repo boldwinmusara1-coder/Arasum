@@ -172,20 +172,9 @@ object BacktestEngine {
                     val tpAtBarOpen = pos.takeProfitPrice
 
                     if (pos.direction == TradeDirection.LONG) {
-                        // If trailing stop, ratchet peak price with current candle high
-                        if (pos.isTrailingStop && candle.high > pos.trailingPeakPrice) {
-                            pos.trailingPeakPrice = candle.high
-                            if (risk.stopLossType == StopLossType.TRAILING_PERCENTAGE) {
-                                pos.stopLossPrice = pos.trailingPeakPrice * (1.0 - (risk.stopLossValue / 100.0))
-                            } else if (risk.stopLossType == StopLossType.TRAILING_ATR) {
-                                val atrVal = indicators.atr.getOrNull(i) ?: (candle.close * 0.02)
-                                pos.stopLossPrice = pos.trailingPeakPrice - (risk.stopLossValue * atrVal)
-                            }
-                        }
-
-                        // Check Gap-through-Stop or Low-through-Stop
-                        val slHit = pos.stopLossPrice != null && candle.low <= pos.stopLossPrice!!
-                        val tpHit = pos.takeProfitPrice != null && candle.high >= pos.takeProfitPrice!!
+                        // Check Gap-through-Stop or Low-through-Stop using stop active at bar start (strictly causal: no intrabar high ratchet before SL check)
+                        val slHit = slAtBarOpen != null && candle.low <= slAtBarOpen
+                        val tpHit = tpAtBarOpen != null && candle.high >= tpAtBarOpen
 
                         if (slHit && tpHit) {
                             // Intrabar SL vs TP Collision
@@ -208,7 +197,7 @@ object BacktestEngine {
                                 exitPrice = if (isGap) {
                                     candle.open * (1.0 - slippageRate) // Gap down fill
                                 } else {
-                                    pos.stopLossPrice!! * (1.0 - slippageRate)
+                                    slAtBarOpen!! * (1.0 - slippageRate)
                                 }
                             } else {
                                 exitTrade = true
@@ -217,7 +206,7 @@ object BacktestEngine {
                                 exitPrice = if (isGap) {
                                     candle.open * (1.0 - slippageRate) // Gap up fill
                                 } else {
-                                    pos.takeProfitPrice!! * (1.0 - slippageRate)
+                                    tpAtBarOpen!! * (1.0 - slippageRate)
                                 }
                             }
                         } else if (slHit) {
@@ -227,7 +216,7 @@ object BacktestEngine {
                             exitPrice = if (isGap) {
                                 candle.open * (1.0 - slippageRate) // Gap down past stop
                             } else {
-                                pos.stopLossPrice!! * (1.0 - slippageRate)
+                                slAtBarOpen!! * (1.0 - slippageRate)
                             }
                         } else if (tpHit) {
                             exitTrade = true
@@ -236,23 +225,13 @@ object BacktestEngine {
                             exitPrice = if (isGap) {
                                 candle.open * (1.0 - slippageRate) // Gap up past TP
                             } else {
-                                pos.takeProfitPrice!! * (1.0 - slippageRate)
+                                tpAtBarOpen!! * (1.0 - slippageRate)
                             }
                         }
                     } else { // SHORT Position
-                        // If trailing stop, ratchet peak price with current candle low
-                        if (pos.isTrailingStop && candle.low < pos.trailingPeakPrice) {
-                            pos.trailingPeakPrice = candle.low
-                            if (risk.stopLossType == StopLossType.TRAILING_PERCENTAGE) {
-                                pos.stopLossPrice = pos.trailingPeakPrice * (1.0 + (risk.stopLossValue / 100.0))
-                            } else if (risk.stopLossType == StopLossType.TRAILING_ATR) {
-                                val atrVal = indicators.atr.getOrNull(i) ?: (candle.close * 0.02)
-                                pos.stopLossPrice = pos.trailingPeakPrice + (risk.stopLossValue * atrVal)
-                            }
-                        }
-
-                        val slHit = pos.stopLossPrice != null && candle.high >= pos.stopLossPrice!!
-                        val tpHit = pos.takeProfitPrice != null && candle.low <= pos.takeProfitPrice!!
+                        // Check Gap-through-Stop or High-through-Stop using stop active at bar start
+                        val slHit = slAtBarOpen != null && candle.high >= slAtBarOpen
+                        val tpHit = tpAtBarOpen != null && candle.low <= tpAtBarOpen
 
                         if (slHit && tpHit) {
                             val slFirst = when (risk.intrabarExecution) {
@@ -274,7 +253,7 @@ object BacktestEngine {
                                 exitPrice = if (isGap) {
                                     candle.open * (1.0 + slippageRate) // Gap up fill
                                 } else {
-                                    pos.stopLossPrice!! * (1.0 + slippageRate)
+                                    slAtBarOpen!! * (1.0 + slippageRate)
                                 }
                             } else {
                                 exitTrade = true
@@ -283,7 +262,7 @@ object BacktestEngine {
                                 exitPrice = if (isGap) {
                                     candle.open * (1.0 + slippageRate) // Gap down fill
                                 } else {
-                                    pos.takeProfitPrice!! * (1.0 + slippageRate)
+                                    tpAtBarOpen!! * (1.0 + slippageRate)
                                 }
                             }
                         } else if (slHit) {
@@ -293,7 +272,7 @@ object BacktestEngine {
                             exitPrice = if (isGap) {
                                 candle.open * (1.0 + slippageRate) // Gap up past stop
                             } else {
-                                pos.stopLossPrice!! * (1.0 + slippageRate)
+                                slAtBarOpen!! * (1.0 + slippageRate)
                             }
                         } else if (tpHit) {
                             exitTrade = true
@@ -302,7 +281,30 @@ object BacktestEngine {
                             exitPrice = if (isGap) {
                                 candle.open * (1.0 + slippageRate) // Gap down past TP
                             } else {
-                                pos.takeProfitPrice!! * (1.0 + slippageRate)
+                                tpAtBarOpen!! * (1.0 + slippageRate)
+                            }
+                        }
+                    }
+
+                    // Intrabar Trailing Stop Ratchet:
+                    // Only after candle i's stops are evaluated and position survives may the trailing stop
+                    // be ratcheted using candle i's favorable extreme. This ratcheted stop becomes active starting from NEXT candle.
+                    if (!exitTrade && pos.isTrailingStop) {
+                        if (pos.direction == TradeDirection.LONG && candle.high > pos.trailingPeakPrice) {
+                            pos.trailingPeakPrice = candle.high
+                            if (risk.stopLossType == StopLossType.TRAILING_PERCENTAGE) {
+                                pos.stopLossPrice = pos.trailingPeakPrice * (1.0 - (risk.stopLossValue / 100.0))
+                            } else if (risk.stopLossType == StopLossType.TRAILING_ATR) {
+                                val atrVal = indicators.atr.getOrNull(i) ?: (candle.close * 0.02)
+                                pos.stopLossPrice = pos.trailingPeakPrice - (risk.stopLossValue * atrVal)
+                            }
+                        } else if (pos.direction == TradeDirection.SHORT && candle.low < pos.trailingPeakPrice) {
+                            pos.trailingPeakPrice = candle.low
+                            if (risk.stopLossType == StopLossType.TRAILING_PERCENTAGE) {
+                                pos.stopLossPrice = pos.trailingPeakPrice * (1.0 + (risk.stopLossValue / 100.0))
+                            } else if (risk.stopLossType == StopLossType.TRAILING_ATR) {
+                                val atrVal = indicators.atr.getOrNull(i) ?: (candle.close * 0.02)
+                                pos.stopLossPrice = pos.trailingPeakPrice + (risk.stopLossValue * atrVal)
                             }
                         }
                     }
@@ -452,7 +454,7 @@ object BacktestEngine {
             // STEP 4: Mark-To-Market Equity Accounting
             // =========================================================================
             val barEquity = calculateEquity(cash, activePosition, candle.close)
-            if (barEquity > peakEquity) {
+            if (barEquity >= peakEquity) {
                 peakEquity = barEquity
                 currentDrawdownDuration = 0
             } else {
@@ -477,7 +479,7 @@ object BacktestEngine {
             )
         }
 
-        // Close any remaining active position at final bar close
+        // Close any remaining active position at final bar close BEFORE computing metrics
         if (activePosition != null) {
             val lastCandle = candles.last()
             val pos = activePosition!!
@@ -488,10 +490,32 @@ object BacktestEngine {
             cash += pos.marginAllocated + (closedTrade.pnlDollars + pos.entryFeePaid)
             trades.add(closedTrade)
             activePosition = null
+
+            // Update the final equity point so final equity and net profit reflect the closed trade's realized PnL
+            if (equityCurve.isNotEmpty()) {
+                val lastIdx = equityCurve.size - 1
+                val lastPt = equityCurve[lastIdx]
+                val finalDdPct = if (peakEquity > 0) (((peakEquity - cash) / peakEquity) * 100.0).coerceAtLeast(0.0) else 0.0
+                maxDrawdownPct = max(maxDrawdownPct, finalDdPct)
+                equityCurve[lastIdx] = lastPt.copy(
+                    equity = cash,
+                    cash = cash,
+                    drawdownPct = finalDdPct
+                )
+            }
         }
 
         // Compute performance metrics
-        val metrics = computeMetrics(risk.initialCapital, equityCurve, trades, candles, maxDrawdownPct, maxDrawdownDurationBars)
+        val metrics = computeMetrics(
+            initialCapital = risk.initialCapital,
+            equityCurve = equityCurve,
+            trades = trades,
+            candles = candles,
+            maxDrawdownPct = maxDrawdownPct,
+            maxDrawdownDurationBars = maxDrawdownDurationBars,
+            timeframe = timeframe,
+            assetCategory = asset.category
+        )
 
         val dsInfo = dataSourceInfo ?: DataSourceInfo(
             provider = "Real Historical API",
@@ -708,12 +732,19 @@ object BacktestEngine {
         val marginAllocated = positionValue / risk.leverage
         val entryFee = positionValue * feeRate
 
+        // Recalculate actualInitialRisk based on actual (possibly capped) position size
+        val actualInitialRisk = if (slPrice != null) {
+            abs(entryPrice - slPrice) * quantity
+        } else {
+            (positionValue / risk.leverage) * 0.03
+        }
+
         val result = PositionSizingResult(
             quantity = quantity,
             positionValue = positionValue,
             marginAllocated = marginAllocated,
             entryFee = entryFee,
-            initialRiskDollars = initialRiskDollars
+            initialRiskDollars = actualInitialRisk
         )
 
         return Tuple4(result, slPrice, tpPrice, isTrailing)
@@ -1083,34 +1114,34 @@ object BacktestEngine {
                 }
 
                 var longSignal = false
-                if (confirmedHighs.size >= minTouches) {
-                    val p1 = confirmedHighs[confirmedHighs.size - 2]
-                    val p2 = confirmedHighs[confirmedHighs.size - 1]
-                    if (p2.first > p1.first) {
-                        val slope = (p2.second - p1.second) / (p2.first - p1.first)
-                        val linePrice = p2.second + slope * (i - p2.first)
-                        val confirmMultiplier = 1.0 + (tlParams.confirmationThresholdPct / 100.0)
-
-                        // Breakout above downward or horizontal resistance trendline
-                        if (slope <= 0.005 * p2.second) {
-                            longSignal = prev.close <= linePrice && current.close >= linePrice * confirmMultiplier
-                        }
+                val resistanceLine = findValidResistanceTrendline(
+                    confirmedHighs = confirmedHighs,
+                    candles = candles,
+                    currentBarIndex = i,
+                    minTouches = minTouches,
+                    tolerancePct = tlParams.retestTolerancePct
+                )
+                if (resistanceLine != null) {
+                    val linePrice = resistanceLine.linePriceAtCurrent
+                    val confirmMultiplier = 1.0 + (tlParams.confirmationThresholdPct / 100.0)
+                    if (resistanceLine.slope <= 0.005 * resistanceLine.p2.second) {
+                        longSignal = prev.close <= linePrice && current.close >= linePrice * confirmMultiplier
                     }
                 }
 
                 var shortSignal = false
-                if (confirmedLows.size >= minTouches) {
-                    val p1 = confirmedLows[confirmedLows.size - 2]
-                    val p2 = confirmedLows[confirmedLows.size - 1]
-                    if (p2.first > p1.first) {
-                        val slope = (p2.second - p1.second) / (p2.first - p1.first)
-                        val linePrice = p2.second + slope * (i - p2.first)
-                        val confirmMultiplier = 1.0 - (tlParams.confirmationThresholdPct / 100.0)
-
-                        // Breakout below upward or horizontal support trendline
-                        if (slope >= -0.005 * p2.second) {
-                            shortSignal = prev.close >= linePrice && current.close <= linePrice * confirmMultiplier
-                        }
+                val supportLine = findValidSupportTrendline(
+                    confirmedLows = confirmedLows,
+                    candles = candles,
+                    currentBarIndex = i,
+                    minTouches = minTouches,
+                    tolerancePct = tlParams.retestTolerancePct
+                )
+                if (supportLine != null) {
+                    val linePrice = supportLine.linePriceAtCurrent
+                    val confirmMultiplier = 1.0 - (tlParams.confirmationThresholdPct / 100.0)
+                    if (supportLine.slope >= -0.005 * supportLine.p2.second) {
+                        shortSignal = prev.close >= linePrice && current.close <= linePrice * confirmMultiplier
                     }
                 }
 
@@ -1154,55 +1185,55 @@ object BacktestEngine {
                 }
 
                 var longSignal = false
-                if (confirmedLows.size >= minTouches) {
-                    val p1 = confirmedLows[confirmedLows.size - 2]
-                    val p2 = confirmedLows[confirmedLows.size - 1]
-                    if (p2.first > p1.first) {
-                        val slope = (p2.second - p1.second) / (p2.first - p1.first)
-                        val linePrice = p2.second + slope * (i - p2.first)
+                val supportLine = findValidSupportTrendline(
+                    confirmedLows = confirmedLows,
+                    candles = candles,
+                    currentBarIndex = i,
+                    minTouches = minTouches,
+                    tolerancePct = tlParams.retestTolerancePct
+                )
+                if (supportLine != null) {
+                    val linePrice = supportLine.linePriceAtCurrent
+                    val tolerance = 1.0 + (tlParams.retestTolerancePct / 100.0)
+                    val touchedSupport = current.low <= linePrice * tolerance && current.close > linePrice
+                    val bullishRejection = current.close > current.open && (current.close - current.low) > (current.high - current.close)
 
-                        // Ascending support bounce: candle tested line within tolerance and rejected upwards
-                        val tolerance = 1.0 + (tlParams.retestTolerancePct / 100.0)
-                        val touchedSupport = current.low <= linePrice * tolerance && current.close > linePrice
-                        val bullishRejection = current.close > current.open && (current.close - current.low) > (current.high - current.close)
-
-                        var valid = touchedSupport && bullishRejection
-                        if (valid && tlParams.useMaTrendFilter) {
-                            val ma = ind.slowMa.getOrNull(i) ?: current.close
-                            valid = current.close >= ma * 0.98
-                        }
-                        if (valid && tlParams.useRsiFilter) {
-                            val rsi = ind.rsi.getOrNull(i) ?: 50.0
-                            valid = rsi <= tlParams.rsiOversoldThreshold + 20.0
-                        }
-                        longSignal = valid
+                    var valid = touchedSupport && bullishRejection
+                    if (valid && tlParams.useMaTrendFilter) {
+                        val ma = ind.slowMa.getOrNull(i) ?: current.close
+                        valid = current.close >= ma * 0.98
                     }
+                    if (valid && tlParams.useRsiFilter) {
+                        val rsi = ind.rsi.getOrNull(i) ?: 50.0
+                        valid = rsi <= tlParams.rsiOversoldThreshold + 20.0
+                    }
+                    longSignal = valid
                 }
 
                 var shortSignal = false
-                if (confirmedHighs.size >= minTouches) {
-                    val p1 = confirmedHighs[confirmedHighs.size - 2]
-                    val p2 = confirmedHighs[confirmedHighs.size - 1]
-                    if (p2.first > p1.first) {
-                        val slope = (p2.second - p1.second) / (p2.first - p1.first)
-                        val linePrice = p2.second + slope * (i - p2.first)
+                val resistanceLine = findValidResistanceTrendline(
+                    confirmedHighs = confirmedHighs,
+                    candles = candles,
+                    currentBarIndex = i,
+                    minTouches = minTouches,
+                    tolerancePct = tlParams.retestTolerancePct
+                )
+                if (resistanceLine != null) {
+                    val linePrice = resistanceLine.linePriceAtCurrent
+                    val tolerance = 1.0 - (tlParams.retestTolerancePct / 100.0)
+                    val touchedResistance = current.high >= linePrice * tolerance && current.close < linePrice
+                    val bearishRejection = current.close < current.open && (current.high - current.close) > (current.close - current.low)
 
-                        // Descending resistance bounce: candle tested resistance and rejected downwards
-                        val tolerance = 1.0 - (tlParams.retestTolerancePct / 100.0)
-                        val touchedResistance = current.high >= linePrice * tolerance && current.close < linePrice
-                        val bearishRejection = current.close < current.open && (current.high - current.close) > (current.close - current.low)
-
-                        var valid = touchedResistance && bearishRejection
-                        if (valid && tlParams.useMaTrendFilter) {
-                            val ma = ind.slowMa.getOrNull(i) ?: current.close
-                            valid = current.close <= ma * 1.02
-                        }
-                        if (valid && tlParams.useRsiFilter) {
-                            val rsi = ind.rsi.getOrNull(i) ?: 50.0
-                            valid = rsi >= tlParams.rsiOverboughtThreshold - 20.0
-                        }
-                        shortSignal = valid
+                    var valid = touchedResistance && bearishRejection
+                    if (valid && tlParams.useMaTrendFilter) {
+                        val ma = ind.slowMa.getOrNull(i) ?: current.close
+                        valid = current.close <= ma * 1.02
                     }
+                    if (valid && tlParams.useRsiFilter) {
+                        val rsi = ind.rsi.getOrNull(i) ?: 50.0
+                        valid = rsi >= tlParams.rsiOverboughtThreshold - 20.0
+                    }
+                    shortSignal = valid
                 }
 
                 return Pair(longSignal, shortSignal)
@@ -1241,7 +1272,9 @@ object BacktestEngine {
         trades: List<Trade>,
         candles: List<Candle>,
         maxDrawdownPct: Double,
-        maxDrawdownDurationBars: Int
+        maxDrawdownDurationBars: Int,
+        timeframe: Timeframe = Timeframe.D1,
+        assetCategory: AssetCategory? = null
     ): BacktestMetrics {
         val finalEquity = equityCurve.lastOrNull()?.equity ?: initialCapital
         val netProfitDollars = finalEquity - initialCapital
@@ -1314,22 +1347,41 @@ object BacktestEngine {
         } else 0.0
         val stdDev = sqrt(variance)
 
-        val sharpeRatio = if (stdDev > 0.0) (meanBarReturn / stdDev) * sqrt(252.0) else 0.0
+        // Timeframe-aware annualization factor
+        val tradingDaysPerYear = if (assetCategory == AssetCategory.CRYPTO) 365.0 else 252.0
+        val barsPerDay = 1440.0 / timeframe.minutes.toDouble()
+        val annualizationFactor = sqrt(tradingDaysPerYear * barsPerDay)
+
+        val sharpeRatio = if (stdDev > 0.0) (meanBarReturn / stdDev) * annualizationFactor else 0.0
 
         val downsideReturns = barReturns.filter { it < 0.0 }
         val downsideVariance = if (downsideReturns.size > 1) {
             downsideReturns.sumOf { it * it } / downsideReturns.size
         } else 0.0
         val downsideStdDev = sqrt(downsideVariance)
-        val sortinoRatio = if (downsideStdDev > 0.0) (meanBarReturn / downsideStdDev) * sqrt(252.0) else 0.0
+        val sortinoRatio = if (downsideStdDev > 0.0) (meanBarReturn / downsideStdDev) * annualizationFactor else 0.0
 
         val calmarRatio = if (maxDrawdownPct > 0.0) netProfitPercent / maxDrawdownPct else 0.0
-        val cagrPercent = if (candles.size > 1) {
-            val years = candles.size / 252.0
-            if (years > 0.0 && finalEquity > 0.0) {
-                ((finalEquity / initialCapital).pow(1.0 / years) - 1.0) * 100.0
-            } else netProfitPercent
-        } else netProfitPercent
+
+        // Actual elapsed time-based CAGR
+        val cagrPercent = if (candles.size >= 2) {
+            val firstTs = candles.first().timestamp
+            val lastTs = candles.last().timestamp
+            val elapsedMs = (lastTs - firstTs).toDouble()
+            val msPerYear = 365.25 * 86400000.0 // 31,557,600,000 ms per year
+            val years = elapsedMs / msPerYear
+
+            if (years > 0.0 && finalEquity > 0.0 && initialCapital > 0.0) {
+                val cagr = ((finalEquity / initialCapital).pow(1.0 / years) - 1.0) * 100.0
+                cagr.coerceIn(-100.0, 100000.0)
+            } else if (finalEquity <= 0.0) {
+                -100.0
+            } else {
+                netProfitPercent
+            }
+        } else {
+            netProfitPercent
+        }
 
         return BacktestMetrics(
             initialCapital = initialCapital,
@@ -1365,6 +1417,114 @@ object BacktestEngine {
             expectancyDollars = expectancyDollars,
             expectancyR = expectancyR
         )
+    }
+
+    private data class ValidTrendline(
+        val p1: Pair<Int, Double>,
+        val p2: Pair<Int, Double>,
+        val slope: Double,
+        val touchCount: Int,
+        val linePriceAtCurrent: Double
+    )
+
+    private fun findValidResistanceTrendline(
+        confirmedHighs: List<Pair<Int, Double>>,
+        candles: List<Candle>,
+        currentBarIndex: Int,
+        minTouches: Int,
+        tolerancePct: Double
+    ): ValidTrendline? {
+        if (confirmedHighs.size < minTouches) return null
+        val tolerance = tolerancePct / 100.0
+
+        for (idx2 in confirmedHighs.indices.reversed()) {
+            val p2 = confirmedHighs[idx2]
+            for (idx1 in (idx2 - 1) downTo 0) {
+                val p1 = confirmedHighs[idx1]
+                if (p2.first <= p1.first) continue
+                val slope = (p2.second - p1.second) / (p2.first - p1.first)
+
+                var touches = 0
+                for (p in confirmedHighs) {
+                    if (p.first < p1.first) continue
+                    val expectedLinePrice = p1.second + slope * (p.first - p1.first)
+                    if (expectedLinePrice > 0) {
+                        val diffPct = abs(p.second - expectedLinePrice) / expectedLinePrice
+                        if (diffPct <= tolerance) {
+                            touches++
+                        }
+                    }
+                }
+
+                if (touches >= minTouches) {
+                    var breached = false
+                    val penetrationTol = max(tolerance, 0.015)
+                    for (bar in p1.first until currentBarIndex) {
+                        val lineAtBar = p1.second + slope * (bar - p1.first)
+                        if (candles[bar].close > lineAtBar * (1.0 + penetrationTol)) {
+                            breached = true
+                            break
+                        }
+                    }
+
+                    if (!breached) {
+                        val linePriceAtCurrent = p1.second + slope * (currentBarIndex - p1.first)
+                        return ValidTrendline(p1, p2, slope, touches, linePriceAtCurrent)
+                    }
+                }
+            }
+        }
+        return null
+    }
+
+    private fun findValidSupportTrendline(
+        confirmedLows: List<Pair<Int, Double>>,
+        candles: List<Candle>,
+        currentBarIndex: Int,
+        minTouches: Int,
+        tolerancePct: Double
+    ): ValidTrendline? {
+        if (confirmedLows.size < minTouches) return null
+        val tolerance = tolerancePct / 100.0
+
+        for (idx2 in confirmedLows.indices.reversed()) {
+            val p2 = confirmedLows[idx2]
+            for (idx1 in (idx2 - 1) downTo 0) {
+                val p1 = confirmedLows[idx1]
+                if (p2.first <= p1.first) continue
+                val slope = (p2.second - p1.second) / (p2.first - p1.first)
+
+                var touches = 0
+                for (p in confirmedLows) {
+                    if (p.first < p1.first) continue
+                    val expectedLinePrice = p1.second + slope * (p.first - p1.first)
+                    if (expectedLinePrice > 0) {
+                        val diffPct = abs(p.second - expectedLinePrice) / expectedLinePrice
+                        if (diffPct <= tolerance) {
+                            touches++
+                        }
+                    }
+                }
+
+                if (touches >= minTouches) {
+                    var breached = false
+                    val penetrationTol = max(tolerance, 0.015)
+                    for (bar in p1.first until currentBarIndex) {
+                        val lineAtBar = p1.second + slope * (bar - p1.first)
+                        if (candles[bar].close < lineAtBar * (1.0 - penetrationTol)) {
+                            breached = true
+                            break
+                        }
+                    }
+
+                    if (!breached) {
+                        val linePriceAtCurrent = p1.second + slope * (currentBarIndex - p1.first)
+                        return ValidTrendline(p1, p2, slope, touches, linePriceAtCurrent)
+                    }
+                }
+            }
+        }
+        return null
     }
 
     private fun emptyResult(

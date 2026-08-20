@@ -75,10 +75,10 @@ class AdversarialIntegrationTest {
     @Test
     fun testVulnerability2_trailingStopSameBarDrawdown() {
         val candles = createBaseCrossCandles(100.0)
-        // Bar 12: Surges to High = 150.0 (Ratchet SL = 150 * 0.90 = 135.0), then collapses to Low = 125.0 (< 135.0)
-        candles.add(Candle(baseTime + 12 * 86400000L, 102.0, 150.0, 125.0, 130.0, 1000.0))
-        // Bar 13: Follow-through
-        candles.add(Candle(baseTime + 13 * 86400000L, 130.0, 132.0, 128.0, 131.0, 1000.0))
+        // Bar 12: Surges to High = 150.0 (Ratchets SL to 150 * 0.90 = 135.0 for subsequent bars)
+        candles.add(Candle(baseTime + 12 * 86400000L, 102.0, 150.0, 140.0, 148.0, 1000.0))
+        // Bar 13: Opens at 148.0, dips to Low = 125.0 (< 135.0 trailing stop) -> Exits causally at 135.0
+        candles.add(Candle(baseTime + 13 * 86400000L, 148.0, 149.0, 125.0, 126.0, 1000.0))
 
         val risk = RiskParameters(
             executionModel = ExecutionModel.REALISTIC,
@@ -96,7 +96,7 @@ class AdversarialIntegrationTest {
         val trade = result.trades.first()
         assertEquals(ExitReason.TRAILING_STOP, trade.exitReason)
         assertEquals(135.0, trade.exitPrice, 0.01)
-        assertEquals(12, trade.exitBarIndex)
+        assertEquals(13, trade.exitBarIndex)
     }
 
     /**

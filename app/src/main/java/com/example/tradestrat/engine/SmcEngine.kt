@@ -38,7 +38,7 @@ class SmcEngine(
     private val activeOrderBlocks = mutableListOf<SmcZone>()
     private val activeBreakerBlocks = mutableListOf<SmcZone>()
 
-    private var currentTrendIsBullish = true
+    private var currentTrendIsBullish: Boolean? = null
     private var lastStructureHigh: SwingPoint? = null
     private var lastStructureLow: SwingPoint? = null
 
@@ -73,7 +73,7 @@ class SmcEngine(
         activeFvgZones.clear()
         activeOrderBlocks.clear()
         activeBreakerBlocks.clear()
-        currentTrendIsBullish = true
+        currentTrendIsBullish = null
         lastStructureHigh = null
         lastStructureLow = null
         bosCount = 0
@@ -117,7 +117,7 @@ class SmcEngine(
         // ---------------------------------------------------------------------
         // 1. Causal Swing High & Swing Low Detection
         // ---------------------------------------------------------------------
-        val lookback = max(3, config.bosLookback)
+        val lookback = max(3, if (config.useBos) config.bosLookback else if (config.useChoch) config.chochLookback else config.sweepLookback)
         val pivotCandidateIdx = i - lookback
         if (pivotCandidateIdx >= lookback) {
             val candidate = candles[pivotCandidateIdx]
@@ -218,26 +218,23 @@ class SmcEngine(
             val broken = if (config.bosCloseConfirmation) (prev.close <= recentHigh.price && current.close > recentHigh.price)
                          else (prev.high <= recentHigh.price && current.high > recentHigh.price)
             if (broken) {
-                if (!currentTrendIsBullish) {
+                val isReversal = (currentTrendIsBullish == false)
+                if (isReversal && config.useChoch) {
                     // Change of Character / Market Structure Shift
-                    if (config.useChoch) {
-                        chochCount++
-                        bullishVotes++
-                        detectedEvents.add(
-                            SmcSignalEvent(i, current.timestamp, StructureType.BULLISH_CHOCH, TradeDirection.LONG, current.close, "Bullish CHOCH / Market Structure Shift")
-                        )
-                    }
-                    currentTrendIsBullish = true
-                } else {
+                    chochCount++
+                    bullishVotes++
+                    detectedEvents.add(
+                        SmcSignalEvent(i, current.timestamp, StructureType.BULLISH_CHOCH, TradeDirection.LONG, current.close, "Bullish CHOCH / Market Structure Shift")
+                    )
+                } else if (config.useBos) {
                     // Break of Structure (Trend Continuation)
-                    if (config.useBos) {
-                        bosCount++
-                        bullishVotes++
-                        detectedEvents.add(
-                            SmcSignalEvent(i, current.timestamp, StructureType.BULLISH_BOS, TradeDirection.LONG, current.close, "Bullish Break of Structure (BOS)")
-                        )
-                    }
+                    bosCount++
+                    bullishVotes++
+                    detectedEvents.add(
+                        SmcSignalEvent(i, current.timestamp, StructureType.BULLISH_BOS, TradeDirection.LONG, current.close, "Bullish Break of Structure (BOS)")
+                    )
                 }
+                currentTrendIsBullish = true
 
                 // Register potential Bullish Order Block (Last bearish candle before breakout)
                 if (config.useOrderBlock) {
@@ -265,26 +262,23 @@ class SmcEngine(
             val broken = if (config.bosCloseConfirmation) (prev.close >= recentLow.price && current.close < recentLow.price)
                          else (prev.low >= recentLow.price && current.low < recentLow.price)
             if (broken) {
-                if (currentTrendIsBullish) {
+                val isReversal = (currentTrendIsBullish == true)
+                if (isReversal && config.useChoch) {
                     // Bearish CHOCH / MSS
-                    if (config.useChoch) {
-                        chochCount++
-                        bearishVotes++
-                        detectedEvents.add(
-                            SmcSignalEvent(i, current.timestamp, StructureType.BEARISH_CHOCH, TradeDirection.SHORT, current.close, "Bearish CHOCH / Market Structure Shift")
-                        )
-                    }
-                    currentTrendIsBullish = false
-                } else {
+                    chochCount++
+                    bearishVotes++
+                    detectedEvents.add(
+                        SmcSignalEvent(i, current.timestamp, StructureType.BEARISH_CHOCH, TradeDirection.SHORT, current.close, "Bearish CHOCH / Market Structure Shift")
+                    )
+                } else if (config.useBos) {
                     // Bearish BOS
-                    if (config.useBos) {
-                        bosCount++
-                        bearishVotes++
-                        detectedEvents.add(
-                            SmcSignalEvent(i, current.timestamp, StructureType.BEARISH_BOS, TradeDirection.SHORT, current.close, "Bearish Break of Structure (BOS)")
-                        )
-                    }
+                    bosCount++
+                    bearishVotes++
+                    detectedEvents.add(
+                        SmcSignalEvent(i, current.timestamp, StructureType.BEARISH_BOS, TradeDirection.SHORT, current.close, "Bearish Break of Structure (BOS)")
+                    )
                 }
+                currentTrendIsBullish = false
 
                 // Register potential Bearish Order Block (Last bullish candle before breakdown)
                 if (config.useOrderBlock) {

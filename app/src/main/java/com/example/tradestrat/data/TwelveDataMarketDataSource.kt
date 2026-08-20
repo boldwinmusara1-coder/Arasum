@@ -30,7 +30,9 @@ class TwelveDataMarketDataSource(
 
     private fun mapTimeframe(tf: Timeframe): String {
         return when (tf) {
+            Timeframe.M5 -> "5min"
             Timeframe.M15 -> "15min"
+            Timeframe.M30 -> "30min"
             Timeframe.H1 -> "1h"
             Timeframe.H4 -> "4h"
             Timeframe.D1 -> "1day"

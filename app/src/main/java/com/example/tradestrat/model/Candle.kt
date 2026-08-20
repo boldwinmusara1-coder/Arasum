@@ -55,7 +55,9 @@ enum class MarketRegime(val title: String, val description: String) {
 }
 
 enum class Timeframe(val label: String, val minutes: Int) {
+    M5("5m", 5),
     M15("15m", 15),
+    M30("30m", 30),
     H1("1h", 60),
     H4("4h", 240),
     D1("1D", 1440)

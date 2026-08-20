@@ -1,5 +1,6 @@
 package com.example.tradestrat.data
 
+import com.example.tradestrat.model.AssetCategory
 import com.example.tradestrat.model.Candle
 import com.example.tradestrat.model.Timeframe
 
@@ -21,11 +22,13 @@ object MarketDataValidator {
      * Validates and cleanses raw market candle data.
      * Ensures strict chronological sorting, removes duplicate timestamps,
      * filters out incomplete/future candles, and verifies that all OHLC relationships hold true.
-     * Classifies gaps into EXPECTED GAP (weekends/market closures) and UNEXPECTED DATA GAP.
+     * Classifies gaps into EXPECTED GAP (weekends/market closures for non-24/7 markets) and UNEXPECTED DATA GAP.
+     * For 24/7 markets (e.g. Crypto), weekend gaps are correctly identified as UNEXPECTED DATA GAP.
      */
     fun validateAndClean(
         rawCandles: List<Candle>,
         timeframe: Timeframe,
+        assetCategory: AssetCategory? = null,
         expectedStartTimeMs: Long? = null,
         expectedEndTimeMs: Long? = null,
         currentTimeMs: Long = System.currentTimeMillis()
@@ -106,6 +109,7 @@ object MarketDataValidator {
         // 5. Gap Classification: EXPECTED GAP vs UNEXPECTED DATA GAP
         var unexpectedGaps = 0
         var expectedGaps = 0
+        val is247Market = assetCategory == AssetCategory.CRYPTO
 
         if (cleanCandles.size >= 2) {
             for (i in 1 until cleanCandles.size) {
@@ -113,20 +117,35 @@ object MarketDataValidator {
                 val currTs = cleanCandles[i].timestamp
                 val deltaMs = currTs - prevTs
 
-                if (deltaMs > timeframeDurationMs) {
-                    // Check if gap is due to standard weekend (>= 48h) or overnight closure
-                    val isWeekendOrMarketClosure = deltaMs >= 40 * 60 * 60 * 1000L // > 40 hours
-                    if (isWeekendOrMarketClosure) {
-                        expectedGaps++
-                    } else {
+                if (deltaMs > timeframeDurationMs + 5000L) {
+                    if (is247Market) {
+                        // 24/7 Crypto markets never close on weekends or overnight
                         unexpectedGaps++
+                        val gapHours = deltaMs / (1000.0 * 3600.0)
+                        violations.add("UNEXPECTED DATA GAP: Detected %.1fh gap in 24/7 Crypto market between %d and %d.".format(
+                            gapHours, prevTs, currTs
+                        ))
+                    } else {
+                        // Traditional financial markets (FX, Equities, Indices, Commodities)
+                        val isWeekendClosure = deltaMs in (36 * 3600 * 1000L)..(72 * 3600 * 1000L)
+                        val isOvernightClosure = (assetCategory == AssetCategory.STOCKS || assetCategory == AssetCategory.INDICES) &&
+                                deltaMs in (10 * 3600 * 1000L)..(20 * 3600 * 1000L)
+
+                        if (isWeekendClosure || isOvernightClosure) {
+                            expectedGaps++
+                            val gapType = if (isWeekendClosure) "Weekend closure" else "Overnight closure"
+                            violations.add("EXPECTED GAP: %s (%.1fh) between %d and %d.".format(
+                                gapType, deltaMs / (1000.0 * 3600.0), prevTs, currTs
+                            ))
+                        } else {
+                            unexpectedGaps++
+                            violations.add("UNEXPECTED DATA GAP: Detected %.1fh gap during regular trading hours between %d and %d.".format(
+                                deltaMs / (1000.0 * 3600.0), prevTs, currTs
+                            ))
+                        }
                     }
                 }
             }
-        }
-
-        if (unexpectedGaps > 0) {
-            violations.add("Detected $unexpectedGaps unexpected data gap(s) during active trading hours.")
         }
 
         // 6. Verify minimum historical candle depth

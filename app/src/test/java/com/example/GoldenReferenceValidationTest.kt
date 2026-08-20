@@ -369,8 +369,10 @@ class GoldenReferenceValidationTest {
         )
 
         val candles = generateBaseLongCandles(100.0)
-        // Bar 12: High reaches 140.0, Low drops to 120.0
-        candles.add(Candle(baseTime + 12 * 86400000L, 100.0, 140.0, 120.0, 122.0, 1000.0))
+        // Bar 12: High reaches 140.0, ratchets trailing stop to 140 * 0.90 = 126.0
+        candles.add(Candle(baseTime + 12 * 86400000L, 100.0, 140.0, 130.0, 138.0, 1000.0))
+        // Bar 13: Opens at 138.0, drops to Low = 120.0 (< 126.0 trailing stop) -> Exits causally at 126.0
+        candles.add(Candle(baseTime + 13 * 86400000L, 138.0, 139.0, 120.0, 122.0, 1000.0))
 
         val result = BacktestEngine.runBacktest(candles, testAsset, MarketRegime.HISTORICAL_REALISTIC, Timeframe.D1, fastCrossStrategy, risk)
 

@@ -96,6 +96,7 @@ class MarketDataRepository(
                     val (cleanCandles, report) = MarketDataValidator.validateAndClean(
                         rawCandles = rawCandles,
                         timeframe = timeframe,
+                        assetCategory = asset.category,
                         expectedStartTimeMs = startTimeMs,
                         expectedEndTimeMs = endTimeMs
                     )
