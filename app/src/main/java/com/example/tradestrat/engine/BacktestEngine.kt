@@ -1,9 +1,8 @@
 package com.example.tradestrat.engine
 
 import com.example.tradestrat.model.*
-import java.time.Instant
-import java.time.ZoneId
-import java.time.ZonedDateTime
+import java.util.Calendar
+import java.util.TimeZone
 import java.util.UUID
 import kotlin.math.*
 
@@ -899,10 +898,10 @@ object BacktestEngine {
         private val params: OrbParams,
         private val timeframe: Timeframe
     ) {
-        private val zoneId = try {
-            ZoneId.of(params.sessionTimezone)
+        private val timeZone = try {
+            TimeZone.getTimeZone(params.sessionTimezone)
         } catch (e: Exception) {
-            ZoneId.of("UTC")
+            TimeZone.getTimeZone("UTC")
         }
 
         private var currentSessionDate: String = ""
@@ -913,9 +912,14 @@ object BacktestEngine {
         var isWithinTradingSession: Boolean = false
 
         fun update(candle: Candle, barIndex: Int) {
-            val zdt = ZonedDateTime.ofInstant(Instant.ofEpochMilli(candle.timestamp), zoneId)
-            val dateStr = "${zdt.year}-${zdt.monthValue}-${zdt.dayOfMonth}"
-            val minuteOfDay = zdt.hour * 60 + zdt.minute
+            val cal = Calendar.getInstance(timeZone).apply {
+                timeInMillis = candle.timestamp
+            }
+            val year = cal.get(Calendar.YEAR)
+            val month = cal.get(Calendar.MONTH) + 1
+            val day = cal.get(Calendar.DAY_OF_MONTH)
+            val dateStr = "$year-$month-$day"
+            val minuteOfDay = cal.get(Calendar.HOUR_OF_DAY) * 60 + cal.get(Calendar.MINUTE)
 
             val sessionStartMin = params.sessionStartHour * 60 + params.sessionStartMinute
             val sessionEndMin = params.sessionEndHour * 60 + params.sessionEndMinute

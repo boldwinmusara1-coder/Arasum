@@ -82,15 +82,16 @@ class StrategyIndependenceTest {
     @Test
     fun testSmcStandaloneIndependence() {
         val smcConfig = SmcConfig(
+            useBos = true,
             bosLookback = 5,
-            useChochReversal = true,
-            useOrderBlocks = true,
-            useBreakerBlocks = true,
-            useLiquiditySweeps = false,
-            useFvgGaps = false,
+            useChoch = true,
+            useOrderBlock = true,
+            useBreakerBlock = true,
+            useLiquiditySweep = false,
+            useFvg = false,
             useDisplacement = false,
-            useEqhEql = false,
-            usePremiumDiscountZones = false,
+            useEqualHighsLows = false,
+            usePremiumDiscount = false,
             requireConfluence = false,
             minConfluences = 1
         )
@@ -120,12 +121,12 @@ class StrategyIndependenceTest {
         assertNotNull("SMC metrics must be present", smcMetrics)
 
         // SMC metrics must have SMC events but zero ICT events
-        val totalSmcEvents = smcMetrics!!.bosCount + smcMetrics.chochCount + smcMetrics.orderBlockCount + smcMetrics.breakerBlockCount
+        val totalSmcEvents = smcMetrics!!.bosEventsCount + smcMetrics.chochEventsCount + smcMetrics.orderBlocksCount + smcMetrics.breakerBlocksCount
         assertTrue("SMC standalone should record BOS/CHOCH/OB/Breaker events ($totalSmcEvents)", totalSmcEvents > 0)
-        assertEquals("SMC standalone must have 0 liquidity sweeps", 0, smcMetrics.liquiditySweepCount)
-        assertEquals("SMC standalone must have 0 FVG gaps", 0, smcMetrics.fvgGapCount)
+        assertEquals("SMC standalone must have 0 liquidity sweeps", 0, smcMetrics.liquiditySweepsCount)
+        assertEquals("SMC standalone must have 0 FVG gaps", 0, smcMetrics.fvgCount)
         assertEquals("SMC standalone must have 0 displacement events", 0, smcMetrics.displacementCount)
-        assertEquals("SMC standalone must have 0 EQH/EQL pools", 0, smcMetrics.eqhEqlPoolCount)
+        assertEquals("SMC standalone must have 0 EQH/EQL pools", 0, smcMetrics.eqhEqlCount)
 
         // Verify signal reasons contain only SMC terminology
         val entryMarkers = result.signalMarkers.filter { it.isEntry }
@@ -149,15 +150,15 @@ class StrategyIndependenceTest {
     @Test
     fun testIctStandaloneIndependence() {
         val ictConfig = SmcConfig(
-            bosLookback = 5,
-            useChochReversal = false,
-            useOrderBlocks = false,
-            useBreakerBlocks = false,
-            useLiquiditySweeps = true,
-            useFvgGaps = true,
+            useBos = false,
+            useChoch = false,
+            useOrderBlock = false,
+            useBreakerBlock = false,
+            useLiquiditySweep = true,
+            useFvg = true,
             useDisplacement = true,
-            useEqhEql = true,
-            usePremiumDiscountZones = true,
+            useEqualHighsLows = true,
+            usePremiumDiscount = true,
             requireConfluence = false,
             minConfluences = 1
         )
@@ -187,12 +188,12 @@ class StrategyIndependenceTest {
         assertNotNull("SMC/ICT metrics must be present", smcMetrics)
 
         // ICT metrics must have ICT events but zero SMC events
-        val totalIctEvents = smcMetrics!!.liquiditySweepCount + smcMetrics.fvgGapCount + smcMetrics.displacementCount + smcMetrics.eqhEqlPoolCount
+        val totalIctEvents = smcMetrics!!.liquiditySweepsCount + smcMetrics.fvgCount + smcMetrics.displacementCount + smcMetrics.eqhEqlCount
         assertTrue("ICT standalone should record ICT events ($totalIctEvents)", totalIctEvents > 0)
-        assertEquals("ICT standalone must have 0 BOS events", 0, smcMetrics.bosCount)
-        assertEquals("ICT standalone must have 0 CHOCH events", 0, smcMetrics.chochCount)
-        assertEquals("ICT standalone must have 0 Order Blocks", 0, smcMetrics.orderBlockCount)
-        assertEquals("ICT standalone must have 0 Breaker Blocks", 0, smcMetrics.breakerBlockCount)
+        assertEquals("ICT standalone must have 0 BOS events", 0, smcMetrics.bosEventsCount)
+        assertEquals("ICT standalone must have 0 CHOCH events", 0, smcMetrics.chochEventsCount)
+        assertEquals("ICT standalone must have 0 Order Blocks", 0, smcMetrics.orderBlocksCount)
+        assertEquals("ICT standalone must have 0 Breaker Blocks", 0, smcMetrics.breakerBlocksCount)
 
         // Verify signal reasons contain only ICT terminology
         val entryMarkers = result.signalMarkers.filter { it.isEntry }
@@ -217,14 +218,15 @@ class StrategyIndependenceTest {
     fun testSmcIctConfluenceDistinctiveness() {
         // SMC Standalone
         val smcOnlyConfig = SmcConfig(
-            useChochReversal = true,
-            useOrderBlocks = true,
-            useBreakerBlocks = true,
-            useLiquiditySweeps = false,
-            useFvgGaps = false,
+            useBos = true,
+            useChoch = true,
+            useOrderBlock = true,
+            useBreakerBlock = true,
+            useLiquiditySweep = false,
+            useFvg = false,
             useDisplacement = false,
-            useEqhEql = false,
-            usePremiumDiscountZones = false,
+            useEqualHighsLows = false,
+            usePremiumDiscount = false,
             requireConfluence = false,
             minConfluences = 1
         )
@@ -236,14 +238,15 @@ class StrategyIndependenceTest {
 
         // ICT Standalone
         val ictOnlyConfig = SmcConfig(
-            useChochReversal = false,
-            useOrderBlocks = false,
-            useBreakerBlocks = false,
-            useLiquiditySweeps = true,
-            useFvgGaps = true,
+            useBos = false,
+            useChoch = false,
+            useOrderBlock = false,
+            useBreakerBlock = false,
+            useLiquiditySweep = true,
+            useFvg = true,
             useDisplacement = true,
-            useEqhEql = true,
-            usePremiumDiscountZones = true,
+            useEqualHighsLows = true,
+            usePremiumDiscount = true,
             requireConfluence = false,
             minConfluences = 1
         )
@@ -253,16 +256,19 @@ class StrategyIndependenceTest {
             standardRisk
         )
 
-        // SMC + ICT Combined Confluence (Requiring at least 2 distinct confluences)
+        // SMC + ICT Combined Confluence
         val confluenceConfig = SmcConfig(
-            useChochReversal = true,
-            useOrderBlocks = true,
-            useBreakerBlocks = true,
-            useLiquiditySweeps = true,
-            useFvgGaps = true,
+            useBos = true,
+            useChoch = true,
+            useOrderBlock = true,
+            useBreakerBlock = true,
+            useLiquiditySweep = true,
+            useFvg = true,
+            fvgMinGapAtrMultiple = 0.2,
             useDisplacement = true,
-            useEqhEql = true,
-            usePremiumDiscountZones = true,
+            displacementAtrMultiplier = 1.2,
+            useEqualHighsLows = true,
+            usePremiumDiscount = false,
             requireConfluence = true,
             minConfluences = 2
         )
@@ -295,9 +301,10 @@ class StrategyIndependenceTest {
     fun testConfigurationIsolation() {
         // Base SMC config
         val baseSmcConfig = SmcConfig(
+            useBos = true,
             bosLookback = 5,
-            useChochReversal = true,
-            useOrderBlocks = true,
+            useChoch = true,
+            useOrderBlock = true,
             fvgMinGapAtrMultiple = 0.5,
             sweepWickMinPct = 0.20
         )
@@ -311,8 +318,8 @@ class StrategyIndependenceTest {
         val mutatedIctOnSmc = baseSmcConfig.copy(
             fvgMinGapAtrMultiple = 1.8,
             sweepWickMinPct = 0.90,
-            useFvgGaps = true,
-            useLiquiditySweeps = true
+            useFvg = true,
+            useLiquiditySweep = true
         )
         val res2 = BacktestEngine.runBacktest(
             syntheticCandles, testAsset, MarketRegime.HISTORICAL_REALISTIC, Timeframe.D1,
