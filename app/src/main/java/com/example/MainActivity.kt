@@ -33,6 +33,7 @@ enum class AppNavigationTab(
 ) {
     DASHBOARD("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard, "nav_tab_dashboard"),
     BACKTEST("Backtest", Icons.AutoMirrored.Filled.ShowChart, Icons.AutoMirrored.Outlined.ShowChart, "nav_tab_backtest"),
+    COMPARE("Compare", Icons.Filled.CompareArrows, Icons.Outlined.CompareArrows, "nav_tab_compare"),
     REPLAY("Replay", Icons.Filled.FastForward, Icons.Outlined.FastForward, "nav_tab_replay"),
     LAB("Lab", Icons.Filled.Science, Icons.Outlined.Science, "nav_tab_lab"),
     JOURNAL("Journal", Icons.Filled.BookmarkBorder, Icons.Outlined.BookmarkBorder, "nav_tab_journal"),
@@ -103,7 +104,8 @@ class MainActivity : ComponentActivity() {
                             onNavigateToStrategyLab = { currentTab = AppNavigationTab.LAB },
                             onNavigateToJournal = { currentTab = AppNavigationTab.JOURNAL },
                             onNavigateToSmcIct = { currentTab = AppNavigationTab.BACKTEST },
-                            onNavigateToResults = { currentTab = AppNavigationTab.RESULTS }
+                            onNavigateToResults = { currentTab = AppNavigationTab.RESULTS },
+                            onNavigateToCompare = { currentTab = AppNavigationTab.COMPARE }
                         )
 
                         AppNavigationTab.BACKTEST -> BacktestScreen(
@@ -111,6 +113,12 @@ class MainActivity : ComponentActivity() {
                             modifier = Modifier.padding(innerPadding),
                             onNavigateToSmcIct = { currentTab = AppNavigationTab.LAB },
                             onBacktestComplete = { currentTab = AppNavigationTab.RESULTS }
+                        )
+
+                        AppNavigationTab.COMPARE -> StrategyComparisonScreen(
+                            viewModel = backtestViewModel,
+                            modifier = Modifier.padding(innerPadding),
+                            onNavigateBack = { currentTab = AppNavigationTab.DASHBOARD }
                         )
 
                         AppNavigationTab.REPLAY -> ReplayScreen(

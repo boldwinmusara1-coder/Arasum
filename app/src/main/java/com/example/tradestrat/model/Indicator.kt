@@ -59,7 +59,10 @@ data class OrbParams(
     val emaTrendPeriod: Int = 50,
     val useRsiFilter: Boolean = true,
     val rsiPeriod: Int = 14,
-    val rsiThreshold: Double = 50.0
+    val rsiThreshold: Double = 50.0,
+    val breakoutBufferPct: Double = 0.05, // Validated optimal 0.05% breakout confirmation buffer
+    val rsiLongThreshold: Double = 50.0,
+    val rsiShortThreshold: Double = 50.0
 )
 
 data class TrendlineParams(

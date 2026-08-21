@@ -93,6 +93,27 @@ class BacktestViewModel(application: Application) : AndroidViewModel(application
     private val _isStrategyLabRunning = MutableStateFlow(false)
     val isStrategyLabRunning = _isStrategyLabRunning.asStateFlow()
 
+    // Multi-Strategy Comparison Dashboard States
+    private val _comparisonSelectedStrategies = MutableStateFlow<Set<String>>(
+        StrategyDefinition.PRESETS.take(4).map { it.id }.toSet()
+    )
+    val comparisonSelectedStrategies = _comparisonSelectedStrategies.asStateFlow()
+
+    private val _multiStrategyComparisonResult = MutableStateFlow<MultiStrategyComparisonResult?>(null)
+    val multiStrategyComparisonResult = _multiStrategyComparisonResult.asStateFlow()
+
+    private val _isComparingMultiStrategies = MutableStateFlow(false)
+    val isComparingMultiStrategies = _isComparingMultiStrategies.asStateFlow()
+
+    private val _comparisonSortMetric = MutableStateFlow(ComparisonSortMetric.NET_PNL)
+    val comparisonSortMetric = _comparisonSortMetric.asStateFlow()
+
+    private val _rankWeights = MutableStateFlow(StrategyRankWeights())
+    val rankWeights = _rankWeights.asStateFlow()
+
+    private val _selectedComparisonDetailItem = MutableStateFlow<StrategyComparisonItem?>(null)
+    val selectedComparisonDetailItem = _selectedComparisonDetailItem.asStateFlow()
+
     // Market Search & Favorites
     private val _favoriteSymbols = MutableStateFlow<Set<String>>(setOf("BTCUSDT", "EURUSD", "SPY"))
     val favoriteSymbols = _favoriteSymbols.asStateFlow()
@@ -436,6 +457,116 @@ class BacktestViewModel(application: Application) : AndroidViewModel(application
             }
 
             _isStrategyLabRunning.value = false
+        }
+    }
+
+    // Multi-Strategy Comparison Dashboard Functions
+    fun toggleComparisonStrategy(strategyId: String) {
+        val current = _comparisonSelectedStrategies.value.toMutableSet()
+        if (current.contains(strategyId)) {
+            current.remove(strategyId)
+        } else {
+            current.add(strategyId)
+        }
+        _comparisonSelectedStrategies.value = current
+    }
+
+    fun selectAllComparisonStrategies() {
+        _comparisonSelectedStrategies.value = StrategyDefinition.PRESETS.map { it.id }.toSet()
+    }
+
+    fun clearAllComparisonStrategies() {
+        _comparisonSelectedStrategies.value = emptySet()
+    }
+
+    fun setComparisonSortMetric(metric: ComparisonSortMetric) {
+        _comparisonSortMetric.value = metric
+    }
+
+    fun setRankWeights(weights: StrategyRankWeights) {
+        _rankWeights.value = weights
+    }
+
+    fun selectComparisonDetailItem(item: StrategyComparisonItem?) {
+        _selectedComparisonDetailItem.value = item
+    }
+
+    fun runMultiStrategyComparison() {
+        val selectedIds = _comparisonSelectedStrategies.value
+        val selectedStrats = StrategyDefinition.PRESETS.filter { selectedIds.contains(it.id) }
+
+        if (selectedStrats.isEmpty()) {
+            _multiStrategyComparisonResult.value = MultiStrategyComparisonResult(
+                validation = ComparisonValidationResult(
+                    isValid = false,
+                    validationErrors = listOf("Please select at least one strategy to compare.")
+                ),
+                items = emptyList(),
+                monthlyMatrix = emptyList()
+            )
+            return
+        }
+
+        viewModelScope.launch(Dispatchers.Default) {
+            _isComparingMultiStrategies.value = true
+
+            val asset = _selectedAsset.value
+            val regime = _selectedRegime.value
+            val tf = _selectedTimeframe.value
+            val risk = _riskParameters.value
+            val preset = _selectedDatePreset.value
+            val prov = _selectedProvider.value
+
+            val now = System.currentTimeMillis()
+            val startMs = now - (preset.days.toLong() * 24L * 60L * 60L * 1000L)
+
+            val fetchResult = marketDataRepo.getHistoricalCandles(
+                asset = asset,
+                timeframe = tf,
+                startTimeMs = startMs,
+                endTimeMs = now,
+                apiKey = _apiKey.value,
+                isDemoMode = false,
+                provider = if (prov == ProviderSelection.AUTO) null else prov.id
+            )
+
+            if (fetchResult.isSuccess) {
+                val validatedCandles = fetchResult.getOrThrow().candles
+                val dsInfo = _dataSourceInfo.value ?: DataSourceInfo(
+                    provider = "Real Historical API",
+                    symbol = asset.symbol,
+                    market = asset.category.label,
+                    timeframe = tf.label,
+                    startDate = validatedCandles.firstOrNull()?.formattedDate(tf.minutes) ?: "",
+                    endDate = validatedCandles.lastOrNull()?.formattedDate(tf.minutes) ?: "",
+                    startTimestamp = validatedCandles.firstOrNull()?.timestamp ?: 0L,
+                    endTimestamp = validatedCandles.lastOrNull()?.timestamp ?: 0L,
+                    candleCount = validatedCandles.size,
+                    isRealHistorical = true
+                )
+
+                val compResult = StrategyComparisonEngine.runComparison(
+                    strategies = selectedStrats,
+                    candles = validatedCandles,
+                    asset = asset,
+                    regime = regime,
+                    timeframe = tf,
+                    risk = risk,
+                    dataSourceInfo = dsInfo
+                )
+                _multiStrategyComparisonResult.value = compResult
+            } else {
+                _multiStrategyComparisonResult.value = MultiStrategyComparisonResult(
+                    validation = ComparisonValidationResult(
+                        isValid = false,
+                        validationErrors = listOf("Failed to fetch market data: ${fetchResult.exceptionOrNull()?.message ?: "Unknown error"}")
+                    ),
+                    items = emptyList(),
+                    monthlyMatrix = emptyList()
+                )
+            }
+
+            _isComparingMultiStrategies.value = false
         }
     }
 

@@ -39,7 +39,8 @@ fun DashboardScreen(
     onNavigateToStrategyLab: () -> Unit = {},
     onNavigateToJournal: () -> Unit = {},
     onNavigateToSmcIct: () -> Unit = {},
-    onNavigateToResults: () -> Unit = {}
+    onNavigateToResults: () -> Unit = {},
+    onNavigateToCompare: () -> Unit = {}
 ) {
     val theme = LocalAppTheme.current
     val selectedAsset by viewModel.selectedAsset.collectAsState()
@@ -179,11 +180,11 @@ fun DashboardScreen(
                     horizontalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     ActionBigCard(
-                        title = "STRATEGY LAB",
-                        subtitle = "Multi-strategy test",
-                        icon = Icons.Default.Science,
-                        accentColor = Color(0xFFA855F7),
-                        onClick = onNavigateToStrategyLab,
+                        title = "COMPARE",
+                        subtitle = "Multi-strategy matrix",
+                        icon = Icons.Default.CompareArrows,
+                        accentColor = Color(0xFF38BDF8),
+                        onClick = onNavigateToCompare,
                         modifier = Modifier.weight(1f),
                         theme = theme
                     )

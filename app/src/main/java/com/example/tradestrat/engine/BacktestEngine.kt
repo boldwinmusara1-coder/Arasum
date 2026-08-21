@@ -1084,8 +1084,11 @@ object BacktestEngine {
                 val recentVolAvg = candles.subList((i - 5).coerceAtLeast(0), i).map { it.volume }.average().coerceAtLeast(1.0)
                 val volThreshold = recentVolAvg * orbParams.volumeMultiplier
 
-                var longSignal = prev.close <= orbHigh && current.close > orbHigh && current.volume >= volThreshold
-                var shortSignal = prev.close >= orbLow && current.close < orbLow && current.volume >= volThreshold
+                val bufferFactor = 1.0 + (orbParams.breakoutBufferPct / 100.0)
+                val bufferFactorShort = 1.0 - (orbParams.breakoutBufferPct / 100.0)
+
+                var longSignal = prev.close <= orbHigh && current.close > (orbHigh * bufferFactor) && current.volume >= volThreshold
+                var shortSignal = prev.close >= orbLow && current.close < (orbLow * bufferFactorShort) && current.volume >= volThreshold
 
                 // EMA Filter
                 if (orbParams.useEmaTrendFilter) {
@@ -1097,9 +1100,10 @@ object BacktestEngine {
                 // RSI Filter
                 if (orbParams.useRsiFilter) {
                     val rsi = ind.rsi.getOrNull(i) ?: 50.0
-                    val thresh = orbParams.rsiThreshold
-                    longSignal = longSignal && rsi >= thresh
-                    shortSignal = shortSignal && rsi <= (100.0 - thresh)
+                    val longThresh = if (orbParams.rsiLongThreshold != 50.0 || orbParams.rsiShortThreshold != 50.0) orbParams.rsiLongThreshold else orbParams.rsiThreshold
+                    val shortThresh = if (orbParams.rsiLongThreshold != 50.0 || orbParams.rsiShortThreshold != 50.0) orbParams.rsiShortThreshold else (100.0 - orbParams.rsiThreshold)
+                    longSignal = longSignal && rsi >= longThresh
+                    shortSignal = shortSignal && rsi <= shortThresh
                 }
 
                 val reason = if (longSignal) "ORB High Breakout + Volume Confirmation" else if (shortSignal) "ORB Low Breakdown + Volume Confirmation" else null

@@ -28,12 +28,37 @@ data class StrategyDefinition(
     companion object {
         val PRESETS = listOf(
             StrategyDefinition(
-                id = "preset_orb_breakout",
-                name = "Opening Range Breakout (ORB 15)",
-                description = "Captures directional momentum expansion when price breaks above the 15-bar opening range high with volume.",
+                id = "preset_orb_defensive",
+                name = "Opening Range Breakout (ORB 30m Defensive / Low DD)",
+                description = "Conservative ORB profile: 0.05% breakout buffer, 1.2x volume confirmation, 50 EMA trend alignment, 14 RSI filter, and tight 2.5% stop loss for 24.4% lower maximum drawdown.",
                 strategyType = StrategyType.OPENING_RANGE_BREAKOUT,
                 indicatorConfig = IndicatorConfig(
-                    orbParams = OrbParams(rangeBars = 15, volumeMultiplier = 1.2)
+                    orbParams = OrbParams(
+                        openingRangeMinutes = 30,
+                        volumeMultiplier = 1.2,
+                        breakoutBufferPct = 0.05,
+                        useEmaTrendFilter = true,
+                        emaTrendPeriod = 50,
+                        useRsiFilter = true,
+                        rsiThreshold = 50.0
+                    )
+                )
+            ),
+            StrategyDefinition(
+                id = "preset_orb_standard",
+                name = "Opening Range Breakout (ORB 30m Standard)",
+                description = "Standard high-capture ORB profile: 0.00% breakout buffer, 1.2x volume confirmation, 50 EMA trend filter, 14 RSI filter, and 3.0% stop loss for maximum trend capture.",
+                strategyType = StrategyType.OPENING_RANGE_BREAKOUT,
+                indicatorConfig = IndicatorConfig(
+                    orbParams = OrbParams(
+                        openingRangeMinutes = 30,
+                        volumeMultiplier = 1.2,
+                        breakoutBufferPct = 0.0,
+                        useEmaTrendFilter = true,
+                        emaTrendPeriod = 50,
+                        useRsiFilter = true,
+                        rsiThreshold = 50.0
+                    )
                 )
             ),
             StrategyDefinition(
