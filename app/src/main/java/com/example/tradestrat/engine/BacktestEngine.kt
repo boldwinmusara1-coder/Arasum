@@ -641,7 +641,9 @@ object BacktestEngine {
             holdingBars = max(1, exitBarIndex - pos.entryBarIndex),
             maxRunUpPct = pos.maxRunUpPct,
             maxDrawdownPct = pos.maxDrawdownPct,
-            entryReason = pos.entryReason
+            entryReason = pos.entryReason,
+            stopLossPrice = pos.stopLossPrice,
+            takeProfitPrice = pos.takeProfitPrice
         )
     }
 

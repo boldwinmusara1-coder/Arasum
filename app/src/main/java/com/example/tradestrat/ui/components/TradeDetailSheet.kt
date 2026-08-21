@@ -137,6 +137,31 @@ fun TradeDetailSheet(
                 )
             }
 
+            if (trade.stopLossPrice != null || trade.takeProfitPrice != null) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    MetricItemBox(
+                        label = "STOP LOSS",
+                        value = trade.stopLossPrice?.let { String.format(Locale.US, "$%.4f", it) } ?: "None",
+                        subValue = "Calculated Stop",
+                        modifier = Modifier.weight(1f),
+                        theme = theme,
+                        valueColor = theme.accentRed
+                    )
+
+                    MetricItemBox(
+                        label = "TAKE PROFIT",
+                        value = trade.takeProfitPrice?.let { String.format(Locale.US, "$%.4f", it) } ?: "None",
+                        subValue = "Calculated Target",
+                        modifier = Modifier.weight(1f),
+                        theme = theme,
+                        valueColor = theme.accentGreen
+                    )
+                }
+            }
+
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(10.dp)
