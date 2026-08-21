@@ -503,7 +503,7 @@ fun StrategyBuilderScreen(
                         )
                     }
                 }
-                StrategyType.SMC_ICT_CONCEPTS -> {
+                StrategyType.SMC_CONCEPTS, StrategyType.ICT_CONCEPTS, StrategyType.SMC_ICT_CONCEPTS -> {
                     item {
                         SmcConceptConfigCard(
                             strategy = currentStrategy,

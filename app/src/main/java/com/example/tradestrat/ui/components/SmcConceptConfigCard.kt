@@ -115,9 +115,9 @@ fun SmcConceptConfigCard(
                 Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                     Divider(color = BentoBorder, thickness = 1.dp)
 
-                    // Presets Row
+                    // Strategy Archetype & Framework Selector Row
                     Text(
-                        text = "SMC STRATEGY ARCHETYPES",
+                        text = "INSTITUTIONAL STRATEGY ARCHETYPE",
                         style = MaterialTheme.typography.labelSmall,
                         color = BentoLilac,
                         fontWeight = FontWeight.Bold,
@@ -129,62 +129,46 @@ fun SmcConceptConfigCard(
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
                         SmcArchetypeChip(
-                            label = "Structure Shift",
-                            isSelected = smc.useBos && smc.useChoch && !smc.useLiquiditySweep && !smc.useOrderBlock,
+                            label = "SMC Structure",
+                            isSelected = strategy.strategyType == StrategyType.SMC_CONCEPTS,
                             onClick = {
                                 val updated = smc.copy(
                                     useBos = true,
                                     useChoch = true,
                                     useLiquiditySweep = false,
                                     useFvg = false,
-                                    useOrderBlock = false,
+                                    useOrderBlock = true,
                                     useBreakerBlock = false,
+                                    requireConfluence = false,
                                     minConfluences = 1
                                 )
-                                onStrategyChanged(strategy.copy(strategyType = StrategyType.SMC_ICT_CONCEPTS, indicatorConfig = strategy.indicatorConfig.copy(smcConfig = updated)))
+                                onStrategyChanged(strategy.copy(strategyType = StrategyType.SMC_CONCEPTS, indicatorConfig = strategy.indicatorConfig.copy(smcConfig = updated)))
                                 onApplyAndRun?.invoke()
                             },
                             modifier = Modifier.weight(1f)
                         )
                         SmcArchetypeChip(
-                            label = "Liquidity Sweep",
-                            isSelected = smc.useLiquiditySweep && !smc.useBos && !smc.useOrderBlock,
+                            label = "ICT Imbalance",
+                            isSelected = strategy.strategyType == StrategyType.ICT_CONCEPTS,
                             onClick = {
                                 val updated = smc.copy(
                                     useBos = false,
                                     useChoch = false,
                                     useLiquiditySweep = true,
-                                    useFvg = false,
-                                    useOrderBlock = false,
-                                    useBreakerBlock = false,
-                                    minConfluences = 1
-                                )
-                                onStrategyChanged(strategy.copy(strategyType = StrategyType.SMC_ICT_CONCEPTS, indicatorConfig = strategy.indicatorConfig.copy(smcConfig = updated)))
-                                onApplyAndRun?.invoke()
-                            },
-                            modifier = Modifier.weight(1f)
-                        )
-                        SmcArchetypeChip(
-                            label = "FVG Retest",
-                            isSelected = smc.useFvg && !smc.useLiquiditySweep,
-                            onClick = {
-                                val updated = smc.copy(
-                                    useBos = true,
-                                    useChoch = false,
-                                    useLiquiditySweep = false,
                                     useFvg = true,
                                     useOrderBlock = false,
                                     useBreakerBlock = false,
+                                    requireConfluence = false,
                                     minConfluences = 1
                                 )
-                                onStrategyChanged(strategy.copy(strategyType = StrategyType.SMC_ICT_CONCEPTS, indicatorConfig = strategy.indicatorConfig.copy(smcConfig = updated)))
+                                onStrategyChanged(strategy.copy(strategyType = StrategyType.ICT_CONCEPTS, indicatorConfig = strategy.indicatorConfig.copy(smcConfig = updated)))
                                 onApplyAndRun?.invoke()
                             },
                             modifier = Modifier.weight(1f)
                         )
                         SmcArchetypeChip(
-                            label = "Full ICT",
-                            isSelected = smc.useBos && smc.useLiquiditySweep && smc.useOrderBlock && smc.useFvg,
+                            label = "Combined Framework",
+                            isSelected = strategy.strategyType == StrategyType.SMC_ICT_CONCEPTS,
                             onClick = {
                                 val updated = smc.copy(
                                     useBos = true,
@@ -196,6 +180,7 @@ fun SmcConceptConfigCard(
                                     usePremiumDiscount = true,
                                     useDisplacement = true,
                                     useEqualHighsLows = true,
+                                    requireConfluence = true,
                                     minConfluences = 2
                                 )
                                 onStrategyChanged(strategy.copy(strategyType = StrategyType.SMC_ICT_CONCEPTS, indicatorConfig = strategy.indicatorConfig.copy(smcConfig = updated)))
@@ -205,7 +190,7 @@ fun SmcConceptConfigCard(
                         )
                     }
 
-                    // Global SMC Controls (Trade Direction & Confluence Requirement)
+                    // Global Controls (Trade Direction & Optional Confluence Requirement)
                     Surface(
                         shape = RoundedCornerShape(14.dp),
                         color = BentoCardElevated
@@ -225,7 +210,7 @@ fun SmcConceptConfigCard(
                                         Surface(
                                             modifier = Modifier.clickable {
                                                 val updated = smc.copy(tradeDirection = dir)
-                                                onStrategyChanged(strategy.copy(strategyType = StrategyType.SMC_ICT_CONCEPTS, indicatorConfig = strategy.indicatorConfig.copy(smcConfig = updated)))
+                                                onStrategyChanged(strategy.copy(indicatorConfig = strategy.indicatorConfig.copy(smcConfig = updated)))
                                                 onApplyAndRun?.invoke()
                                             },
                                             shape = RoundedCornerShape(8.dp),
@@ -247,33 +232,76 @@ fun SmcConceptConfigCard(
                                 }
                             }
 
+                            Divider(color = BentoBorder.copy(alpha = 0.5f))
+
+                            // Confluence Requirement Toggle (Optional Confluence vs Required Multi-Confluence)
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Column {
-                                    Text("Minimum Confluences Required", style = MaterialTheme.typography.bodyMedium, color = BentoTextPrimary, fontWeight = FontWeight.SemiBold)
-                                    Text("Number of independent SMC concepts needed to fire", style = MaterialTheme.typography.bodySmall, color = BentoTextMuted)
-                                }
-                                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                                    (1..4).forEach { count ->
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                        Text("Confluence Requirement", style = MaterialTheme.typography.bodyMedium, color = BentoTextPrimary, fontWeight = FontWeight.SemiBold)
                                         Surface(
-                                            modifier = Modifier.clickable {
-                                                val updated = smc.copy(minConfluences = count)
-                                                onStrategyChanged(strategy.copy(strategyType = StrategyType.SMC_ICT_CONCEPTS, indicatorConfig = strategy.indicatorConfig.copy(smcConfig = updated)))
-                                                onApplyAndRun?.invoke()
-                                            },
-                                            shape = CircleShape,
-                                            color = if (smc.minConfluences == count) BentoLilac else TvSurfaceElevated
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = if (smc.requireConfluence) BentoLilacContainer else BentoGreen.copy(alpha = 0.15f)
                                         ) {
-                                            Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
-                                                Text(
-                                                    text = "$count",
-                                                    fontSize = 12.sp,
-                                                    fontWeight = FontWeight.Bold,
-                                                    color = if (smc.minConfluences == count) Color.White else BentoTextSecondary
-                                                )
+                                            Text(
+                                                text = if (smc.requireConfluence) "REQUIRED" else "OPTIONAL (ANY RULE)",
+                                                fontSize = 9.sp,
+                                                fontWeight = FontWeight.Bold,
+                                                color = if (smc.requireConfluence) BentoLilacText else BentoGreen,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = if (smc.requireConfluence) "Requires ${smc.minConfluences} simultaneous concepts" else "Optional: Any single active concept triggers entry immediately",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = BentoTextMuted
+                                    )
+                                }
+                                Switch(
+                                    checked = smc.requireConfluence,
+                                    onCheckedChange = { isReq ->
+                                        val updated = smc.copy(
+                                            requireConfluence = isReq,
+                                            minConfluences = if (isReq) maxOf(2, smc.minConfluences) else 1
+                                        )
+                                        onStrategyChanged(strategy.copy(indicatorConfig = strategy.indicatorConfig.copy(smcConfig = updated)))
+                                        onApplyAndRun?.invoke()
+                                    },
+                                    modifier = Modifier.testTag("smc_confluence_toggle")
+                                )
+                            }
+
+                            if (smc.requireConfluence) {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text("Minimum Confluences (${smc.minConfluences})", style = MaterialTheme.typography.bodySmall, color = BentoTextSecondary)
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                                        (2..4).forEach { count ->
+                                            Surface(
+                                                modifier = Modifier.clickable {
+                                                    val updated = smc.copy(minConfluences = count)
+                                                    onStrategyChanged(strategy.copy(indicatorConfig = strategy.indicatorConfig.copy(smcConfig = updated)))
+                                                    onApplyAndRun?.invoke()
+                                                },
+                                                shape = CircleShape,
+                                                color = if (smc.minConfluences == count) BentoLilac else TvSurfaceElevated
+                                            ) {
+                                                Box(modifier = Modifier.size(28.dp), contentAlignment = Alignment.Center) {
+                                                    Text(
+                                                        text = "$count",
+                                                        fontSize = 12.sp,
+                                                        fontWeight = FontWeight.Bold,
+                                                        color = if (smc.minConfluences == count) Color.White else BentoTextSecondary
+                                                    )
+                                                }
                                             }
                                         }
                                     }

@@ -77,6 +77,7 @@ data class SmcConfig(
     val sessionType: SmcSessionType = SmcSessionType.ALL,
     
     val tradeDirection: SmcTradeDirection = SmcTradeDirection.BOTH,
+    val requireConfluence: Boolean = false,
     val minConfluences: Int = 1
 )
 

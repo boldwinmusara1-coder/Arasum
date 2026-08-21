@@ -545,7 +545,7 @@ object BacktestEngine {
             equityCurve = equityCurve,
             signalMarkers = signalMarkers,
             metrics = metrics,
-            smcMetrics = if (strategy.strategyType == StrategyType.SMC_ICT_CONCEPTS) smcEngine.getMetrics() else null,
+            smcMetrics = if (strategy.strategyType == StrategyType.SMC_CONCEPTS || strategy.strategyType == StrategyType.ICT_CONCEPTS || strategy.strategyType == StrategyType.SMC_ICT_CONCEPTS) smcEngine.getMetrics() else null,
             dataSource = dsInfo
         )
     }
@@ -1258,7 +1258,7 @@ object BacktestEngine {
                 val shortSignal = trendBearish && rsiBearish && macdTurningDown
                 return Pair(longSignal, shortSignal)
             }
-            StrategyType.SMC_ICT_CONCEPTS -> {
+            StrategyType.SMC_CONCEPTS, StrategyType.ICT_CONCEPTS, StrategyType.SMC_ICT_CONCEPTS -> {
                 val engine = smcEngine ?: SmcEngine(strategy.indicatorConfig.smcConfig)
                 val smcEval = engine.evaluateBar(i, candles, ind.atr)
                 return Pair(smcEval.longSignal, smcEval.shortSignal)

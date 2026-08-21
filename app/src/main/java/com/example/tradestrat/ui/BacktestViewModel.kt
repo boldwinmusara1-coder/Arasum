@@ -114,8 +114,14 @@ class BacktestViewModel(application: Application) : AndroidViewModel(application
 
     fun updateSmcConfig(smcConfig: SmcConfig) {
         val current = _selectedStrategy.value
+        val updatedType = when (current.strategyType) {
+            StrategyType.SMC_CONCEPTS -> StrategyType.SMC_CONCEPTS
+            StrategyType.ICT_CONCEPTS -> StrategyType.ICT_CONCEPTS
+            StrategyType.SMC_ICT_CONCEPTS -> StrategyType.SMC_ICT_CONCEPTS
+            else -> StrategyType.SMC_CONCEPTS
+        }
         val updated = current.copy(
-            strategyType = StrategyType.SMC_ICT_CONCEPTS,
+            strategyType = updatedType,
             indicatorConfig = current.indicatorConfig.copy(smcConfig = smcConfig)
         )
         _selectedStrategy.value = updated
@@ -259,7 +265,7 @@ class BacktestViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun saveCurrentStrategy(name: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             val custom = _selectedStrategy.value.copy(
                 id = "strat_${System.currentTimeMillis()}",
                 name = name,
@@ -271,7 +277,7 @@ class BacktestViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun saveCurrentBacktest() {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             _currentResult.value?.let { res ->
                 repository.saveBacktestResult(res)
             }
@@ -279,13 +285,13 @@ class BacktestViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun deleteSavedStrategy(id: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             repository.deleteStrategy(id)
         }
     }
 
     fun deleteSavedBacktest(id: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
             repository.deleteBacktest(id)
         }
     }

@@ -1,18 +1,18 @@
 package com.example.tradestrat.ui.components
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Remove
-import androidx.compose.material.icons.filled.ShowChart
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -22,6 +22,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
@@ -36,6 +37,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tradestrat.model.*
 import com.example.ui.theme.*
+import java.util.Locale
 import kotlin.math.*
 
 @Composable
@@ -47,48 +49,52 @@ fun CandlestickChart(
     asset: MarketAsset? = null,
     timeframe: Timeframe? = null,
     showIndicators: Boolean = true,
-    showSignals: Boolean = true
+    showSignals: Boolean = true,
+    smcMetrics: SmcMetrics? = null
 ) {
     if (candles.isEmpty()) {
         Box(
             modifier = modifier
                 .fillMaxWidth()
-                .height(280.dp)
-                .background(TradeSurfaceDark, RoundedCornerShape(12.dp)),
+                .height(300.dp)
+                .background(BentoCardBg, RoundedCornerShape(24.dp)),
             contentAlignment = Alignment.Center
         ) {
-            Text("No candlestick data available", color = TextMuted)
+            Text("No candlestick data available", color = BentoTextMuted)
         }
         return
     }
 
-    var visibleBars by remember { mutableStateOf(60) }
-    var scrollOffset by remember { mutableStateOf(0) }
+    var visibleBars by remember { mutableIntStateOf(55) }
+    var scrollOffset by remember { mutableIntStateOf(0) }
     var selectedBarIndex by remember { mutableStateOf<Int?>(null) }
+    var showOverlayIndicators by remember { mutableStateOf(showIndicators) }
+    var showOverlaySignals by remember { mutableStateOf(showSignals) }
+    var showVolumeOverlay by remember { mutableStateOf(true) }
+
     val textMeasurer = rememberTextMeasurer()
 
     // Clamp visible bars & scroll
     val maxBars = candles.size
-    val clampedVisibleBars = visibleBars.coerceIn(20, maxBars)
+    val clampedVisibleBars = visibleBars.coerceIn(15, maxBars)
     val maxScroll = max(0, maxBars - clampedVisibleBars)
     val clampedScroll = scrollOffset.coerceIn(0, maxScroll)
 
-    // Slice candles to visible window (defaults to newest candles at the right)
+    // Slice candles to visible viewport window (right-aligned for newest data)
     val startIdx = max(0, maxBars - clampedVisibleBars - clampedScroll)
     val endIdx = min(maxBars, startIdx + clampedVisibleBars)
     val visibleCandles = candles.subList(startIdx, endIdx)
 
-    val visibleFastMa = indicators.fastMa.subList(startIdx, endIdx)
-    val visibleSlowMa = indicators.slowMa.subList(startIdx, endIdx)
-    val visibleBbUpper = indicators.bbUpper.subList(startIdx, endIdx)
-    val visibleBbLower = indicators.bbLower.subList(startIdx, endIdx)
-    val visibleBbMid = indicators.bbMiddle.subList(startIdx, endIdx)
-    val visibleSupertrend = indicators.supertrend.subList(startIdx, endIdx)
+    val visibleFastMa = if (indicators.fastMa.size == maxBars) indicators.fastMa.subList(startIdx, endIdx) else emptyList()
+    val visibleSlowMa = if (indicators.slowMa.size == maxBars) indicators.slowMa.subList(startIdx, endIdx) else emptyList()
+    val visibleBbUpper = if (indicators.bbUpper.size == maxBars) indicators.bbUpper.subList(startIdx, endIdx) else emptyList()
+    val visibleBbLower = if (indicators.bbLower.size == maxBars) indicators.bbLower.subList(startIdx, endIdx) else emptyList()
+    val visibleBbMid = if (indicators.bbMiddle.size == maxBars) indicators.bbMiddle.subList(startIdx, endIdx) else emptyList()
 
     val visibleSignals = signalMarkers.filter { it.barIndex in startIdx until endIdx }
 
     val activeSelectedCandle = selectedBarIndex?.let { selIdx ->
-        if (selIdx in startIdx until endIdx) candles[selIdx] else null
+        if (selIdx in startIdx until endIdx && selIdx in candles.indices) candles[selIdx] else null
     }
 
     Card(
@@ -99,20 +105,27 @@ fun CandlestickChart(
         colors = CardDefaults.cardColors(containerColor = BentoCardBg),
         border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(BentoBorder))
     ) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            // Header Controls & Legend
+        Column(modifier = Modifier.padding(14.dp)) {
+            // Chart Header Controls & Meta
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Icon(
-                        imageVector = Icons.Default.ShowChart,
-                        contentDescription = "Chart",
-                        tint = BullGreen,
-                        modifier = Modifier.size(20.dp)
-                    )
+                    Box(
+                        modifier = Modifier
+                            .size(32.dp)
+                            .background(BentoLilacContainer, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.ShowChart,
+                            contentDescription = "Chart",
+                            tint = BentoLilacText,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
                     if (asset != null) {
                         Surface(
                             shape = CircleShape,
@@ -130,111 +143,169 @@ fun CandlestickChart(
                         Text(
                             text = "${asset.symbol} • ${timeframe?.label ?: "D1"}",
                             style = MaterialTheme.typography.titleMedium,
-                            color = TextPrimary,
+                            color = BentoTextPrimary,
                             fontWeight = FontWeight.Bold
                         )
                     } else {
                         Text(
-                            text = "Price Action & Execution Signals",
-                            style = MaterialTheme.typography.labelLarge,
-                            color = TextPrimary,
-                            fontWeight = FontWeight.SemiBold
+                            text = "Interactive Price Chart",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = BentoTextPrimary,
+                            fontWeight = FontWeight.Bold
                         )
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    // Zoom In
+                // Interactive Zoom & Reset Controls
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    if (clampedScroll > 0) {
+                        Surface(
+                            modifier = Modifier
+                                .clickable { scrollOffset = 0 }
+                                .padding(end = 4.dp),
+                            shape = RoundedCornerShape(6.dp),
+                            color = BentoLilacContainer
+                        ) {
+                            Text(
+                                text = "LATEST",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = BentoLilacText,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
+                            )
+                        }
+                    }
+
+                    // Zoom In Button
                     IconButton(
-                        onClick = { visibleBars = (visibleBars - 15).coerceAtLeast(20) },
+                        onClick = { visibleBars = (visibleBars - 12).coerceAtLeast(15) },
                         modifier = Modifier.size(32.dp).testTag("zoom_in_button")
                     ) {
-                        Icon(Icons.Default.Remove, contentDescription = "Zoom In", tint = TextSecondary, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Remove, contentDescription = "Zoom In", tint = BentoTextSecondary, modifier = Modifier.size(16.dp))
                     }
-                    // Zoom Out
+                    // Zoom Out Button
                     IconButton(
-                        onClick = { visibleBars = (visibleBars + 15).coerceAtMost(maxBars) },
+                        onClick = { visibleBars = (visibleBars + 12).coerceAtMost(maxBars) },
                         modifier = Modifier.size(32.dp).testTag("zoom_out_button")
                     ) {
-                        Icon(Icons.Default.Add, contentDescription = "Zoom Out", tint = TextSecondary, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.Add, contentDescription = "Zoom Out", tint = BentoTextSecondary, modifier = Modifier.size(16.dp))
                     }
                 }
             }
 
-            // Indicator Legend pills
+            // Quick Layer Filter Toggles
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(vertical = 4.dp),
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                LegendPill("Fast MA", FastMaLine)
-                LegendPill("Slow MA", SlowMaLine)
-                LegendPill("Bollinger", BollingerUpperLine)
-                LegendPill("Buy ▲", BullGreen)
-                LegendPill("Sell ▼", BearRed)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    LegendPill(
+                        label = "Fast MA",
+                        color = FastMaLine,
+                        isActive = showOverlayIndicators,
+                        onClick = { showOverlayIndicators = !showOverlayIndicators }
+                    )
+                    LegendPill(
+                        label = "Slow MA",
+                        color = SlowMaLine,
+                        isActive = showOverlayIndicators,
+                        onClick = { showOverlayIndicators = !showOverlayIndicators }
+                    )
+                    LegendPill(
+                        label = "Signals",
+                        color = BentoLilac,
+                        isActive = showOverlaySignals,
+                        onClick = { showOverlaySignals = !showOverlaySignals }
+                    )
+                    LegendPill(
+                        label = "Vol",
+                        color = BentoBorder,
+                        isActive = showVolumeOverlay,
+                        onClick = { showVolumeOverlay = !showVolumeOverlay }
+                    )
+                }
+
+                Text(
+                    text = "${visibleCandles.size} / $maxBars bars",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = BentoTextMuted,
+                    fontSize = 10.sp
+                )
             }
 
-            // Selected Bar Tooltip Info Bar
-            if (activeSelectedCandle != null) {
-                Surface(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
-                    shape = RoundedCornerShape(8.dp),
-                    color = TradeSurfaceElevated
-                ) {
-                    Row(
+            // Selected Bar Tooltip Info Floating Bar
+            AnimatedVisibility(
+                visible = activeSelectedCandle != null,
+                enter = fadeIn(),
+                exit = fadeOut()
+            ) {
+                activeSelectedCandle?.let { sel ->
+                    Surface(
                         modifier = Modifier
-                            .padding(horizontal = 8.dp, vertical = 4.dp)
-                            .fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
+                            .fillMaxWidth()
+                            .padding(vertical = 4.dp),
+                        shape = RoundedCornerShape(10.dp),
+                        color = BentoCardElevated
                     ) {
-                        Text(
-                            text = activeSelectedCandle.formattedDate(),
-                            style = TextStyle(fontSize = 11.sp, color = CyanAccent, fontWeight = FontWeight.Bold)
-                        )
-                        Text(
-                            text = "O: ${activeSelectedCandle.open}  H: ${activeSelectedCandle.high}  L: ${activeSelectedCandle.low}  C: ${activeSelectedCandle.close}",
-                            style = TextStyle(fontSize = 11.sp, color = TextPrimary)
-                        )
-                        val changeColor = if (activeSelectedCandle.isBullish) BullGreen else BearRed
-                        Text(
-                            text = String.format("%+.2f%%", activeSelectedCandle.changePct),
-                            style = TextStyle(fontSize = 11.sp, color = changeColor, fontWeight = FontWeight.Bold)
-                        )
+                        Row(
+                            modifier = Modifier
+                                .padding(horizontal = 10.dp, vertical = 6.dp)
+                                .fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = sel.formattedDate(),
+                                style = TextStyle(fontSize = 11.sp, color = BentoLilacText, fontWeight = FontWeight.Bold)
+                            )
+                            Text(
+                                text = "O: ${String.format(Locale.US, "%.2f", sel.open)}  H: ${String.format(Locale.US, "%.2f", sel.high)}  L: ${String.format(Locale.US, "%.2f", sel.low)}  C: ${String.format(Locale.US, "%.2f", sel.close)}",
+                                style = TextStyle(fontSize = 11.sp, color = BentoTextPrimary, fontWeight = FontWeight.Medium)
+                            )
+                            val changeColor = if (sel.isBullish) BentoGreen else BentoRed
+                            Text(
+                                text = String.format(Locale.US, "%+.2f%%", sel.changePct),
+                                style = TextStyle(fontSize = 11.sp, color = changeColor, fontWeight = FontWeight.Bold)
+                            )
+                        }
                     }
                 }
             }
 
-            // Main Canvas
+            // High Performance Canvas Chart
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(280.dp)
-                    .background(TradeDarkBg, RoundedCornerShape(8.dp))
+                    .height(290.dp)
+                    .background(BentoBackground, RoundedCornerShape(16.dp))
             ) {
                 Canvas(
                     modifier = Modifier
                         .fillMaxSize()
                         .pointerInput(Unit) {
                             detectTapGestures { offset ->
-                                val barWidth = size.width / visibleCandles.size
-                                val touchedRelativeIdx = (offset.x / barWidth).toInt().coerceIn(0, visibleCandles.size - 1)
-                                selectedBarIndex = startIdx + touchedRelativeIdx
+                                if (visibleCandles.isNotEmpty()) {
+                                    val barWidth = size.width / visibleCandles.size
+                                    val touchedRelativeIdx = (offset.x / barWidth).toInt().coerceIn(0, visibleCandles.size - 1)
+                                    selectedBarIndex = startIdx + touchedRelativeIdx
+                                }
                             }
                         }
                         .pointerInput(Unit) {
                             detectDragGestures { change, dragAmount ->
                                 change.consume()
-                                val barWidth = size.width / visibleCandles.size
-                                val barsDragged = (dragAmount.x / barWidth).toInt()
-                                if (barsDragged != 0) {
-                                    scrollOffset = (scrollOffset + barsDragged).coerceIn(0, maxScroll)
+                                if (visibleCandles.isNotEmpty()) {
+                                    val barWidth = size.width / visibleCandles.size
+                                    val barsDragged = (dragAmount.x / barWidth).toInt()
+                                    if (barsDragged != 0) {
+                                        scrollOffset = (scrollOffset + barsDragged).coerceIn(0, maxScroll)
+                                    }
+                                    val touchedRelativeIdx = (change.position.x / barWidth).toInt().coerceIn(0, visibleCandles.size - 1)
+                                    selectedBarIndex = startIdx + touchedRelativeIdx
                                 }
-                                val touchedRelativeIdx = (change.position.x / barWidth).toInt().coerceIn(0, visibleCandles.size - 1)
-                                selectedBarIndex = startIdx + touchedRelativeIdx
                             }
                         }
                 ) {
@@ -242,15 +313,15 @@ fun CandlestickChart(
 
                     val chartWidth = size.width
                     val totalHeight = size.height
-                    val priceAreaHeight = totalHeight * 0.78f
-                    val volumeAreaHeight = totalHeight * 0.20f
-                    val volumeAreaTop = totalHeight * 0.80f
+                    val priceAreaHeight = if (showVolumeOverlay) totalHeight * 0.78f else totalHeight * 0.95f
+                    val volumeAreaHeight = totalHeight * 0.18f
+                    val volumeAreaTop = totalHeight * 0.82f
 
-                    // Calculate Price range (including visible indicators)
+                    // Calculate dynamic price range
                     var minPrice = visibleCandles.minOf { it.low }
                     var maxPrice = visibleCandles.maxOf { it.high }
 
-                    if (showIndicators) {
+                    if (showOverlayIndicators) {
                         visibleFastMa.filterNotNull().forEach {
                             minPrice = min(minPrice, it)
                             maxPrice = max(maxPrice, it)
@@ -259,15 +330,11 @@ fun CandlestickChart(
                             minPrice = min(minPrice, it)
                             maxPrice = max(maxPrice, it)
                         }
-                        visibleBbLower.filterNotNull().forEach {
-                            minPrice = min(minPrice, it)
-                        }
-                        visibleBbUpper.filterNotNull().forEach {
-                            maxPrice = max(maxPrice, it)
-                        }
+                        visibleBbLower.filterNotNull().forEach { minPrice = min(minPrice, it) }
+                        visibleBbUpper.filterNotNull().forEach { maxPrice = max(maxPrice, it) }
                     }
 
-                    // Add 5% padding to price range
+                    // Price range padding (5%)
                     val priceSpan = max(0.0001, maxPrice - minPrice)
                     val paddedMinPrice = minPrice - priceSpan * 0.05
                     val paddedMaxPrice = maxPrice + priceSpan * 0.05
@@ -275,14 +342,14 @@ fun CandlestickChart(
 
                     val maxVolume = max(1.0, visibleCandles.maxOf { it.volume })
 
-                    // Draw Horizontal Grid lines & Price Labels
+                    // Horizontal Grid Lines & Price Labels
                     val gridLinesCount = 4
                     for (g in 0..gridLinesCount) {
                         val y = priceAreaHeight * (g.toFloat() / gridLinesCount)
                         val priceAtGrid = paddedMaxPrice - (effectivePriceSpan * (g.toDouble() / gridLinesCount))
 
                         drawLine(
-                            color = ChartGridLine,
+                            color = BentoBorder.copy(alpha = 0.4f),
                             start = Offset(0f, y),
                             end = Offset(chartWidth, y),
                             strokeWidth = 1f
@@ -290,23 +357,23 @@ fun CandlestickChart(
 
                         drawText(
                             textMeasurer = textMeasurer,
-                            text = String.format("%.2f", priceAtGrid),
-                            topLeft = Offset(chartWidth - 55.dp.toPx(), y - 12.sp.toPx()),
-                            style = TextStyle(fontSize = 9.sp, color = TextMuted)
+                            text = String.format(Locale.US, "%.2f", priceAtGrid),
+                            topLeft = Offset(chartWidth - 52.dp.toPx(), y - 10.sp.toPx()),
+                            style = TextStyle(fontSize = 9.sp, color = BentoTextMuted)
                         )
                     }
 
                     val barCount = visibleCandles.size
                     val candleSpacing = chartWidth / barCount
-                    val candleBodyWidth = max(2f, candleSpacing * 0.65f)
+                    val candleBodyWidth = max(2f, candleSpacing * 0.68f)
 
                     fun priceToY(price: Double): Float {
                         val normalized = (paddedMaxPrice - price) / effectivePriceSpan
                         return (normalized * priceAreaHeight).toFloat().coerceIn(0f, priceAreaHeight)
                     }
 
-                    // Draw Bollinger Bands Shaded Area & Lines
-                    if (showIndicators && visibleBbUpper.size == barCount && visibleBbLower.size == barCount) {
+                    // Bollinger Bands Cloud & Lines
+                    if (showOverlayIndicators && visibleBbUpper.size == barCount && visibleBbLower.size == barCount) {
                         val upperPath = Path()
                         val lowerPath = Path()
                         var upperStarted = false
@@ -339,15 +406,15 @@ fun CandlestickChart(
                         }
 
                         if (upperStarted) {
-                            drawPath(upperPath, BollingerUpperLine, style = Stroke(width = 1.5f))
+                            drawPath(upperPath, BollingerUpperLine.copy(alpha = 0.6f), style = Stroke(width = 1.2f))
                         }
                         if (lowerStarted) {
-                            drawPath(lowerPath, BollingerLowerLine, style = Stroke(width = 1.5f))
+                            drawPath(lowerPath, BollingerLowerLine.copy(alpha = 0.6f), style = Stroke(width = 1.2f))
                         }
                     }
 
                     // Draw Fast MA Line
-                    if (showIndicators && visibleFastMa.any { it != null }) {
+                    if (showOverlayIndicators && visibleFastMa.any { it != null }) {
                         val fastPath = Path()
                         var started = false
                         for (i in 0 until barCount) {
@@ -367,7 +434,7 @@ fun CandlestickChart(
                     }
 
                     // Draw Slow MA Line
-                    if (showIndicators && visibleSlowMa.any { it != null }) {
+                    if (showOverlayIndicators && visibleSlowMa.any { it != null }) {
                         val slowPath = Path()
                         var started = false
                         for (i in 0 until barCount) {
@@ -396,7 +463,7 @@ fun CandlestickChart(
                         val lowY = priceToY(c.low)
 
                         val isBull = c.isBullish
-                        val candleColor = if (isBull) BullGreen else BearRed
+                        val candleColor = if (isBull) BentoGreen else BentoRed
 
                         // Draw Wick
                         drawLine(
@@ -415,23 +482,25 @@ fun CandlestickChart(
                             color = candleColor,
                             topLeft = Offset(centerX - (candleBodyWidth / 2f), bodyTop),
                             size = Size(candleBodyWidth, bodyHeight),
-                            cornerRadius = CornerRadius(1.5f, 1.5f)
+                            cornerRadius = CornerRadius(2f, 2f)
                         )
 
                         // Draw Volume Histogram Bar
-                        val volHeight = ((c.volume / maxVolume) * volumeAreaHeight).toFloat()
-                        val volTop = totalHeight - volHeight
-                        val volColor = if (isBull) BullGreen.copy(alpha = 0.35f) else BearRed.copy(alpha = 0.35f)
+                        if (showVolumeOverlay) {
+                            val volHeight = ((c.volume / maxVolume) * volumeAreaHeight).toFloat()
+                            val volTop = totalHeight - volHeight
+                            val volColor = if (isBull) BentoGreen.copy(alpha = 0.30f) else BentoRed.copy(alpha = 0.30f)
 
-                        drawRect(
-                            color = volColor,
-                            topLeft = Offset(centerX - (candleBodyWidth / 2f), volTop),
-                            size = Size(candleBodyWidth, volHeight)
-                        )
+                            drawRect(
+                                color = volColor,
+                                topLeft = Offset(centerX - (candleBodyWidth / 2f), volTop),
+                                size = Size(candleBodyWidth, volHeight)
+                            )
+                        }
                     }
 
                     // Draw Execution Signal Markers
-                    if (showSignals) {
+                    if (showOverlaySignals) {
                         for (sig in visibleSignals) {
                             val relIdx = sig.barIndex - startIdx
                             if (relIdx !in 0 until barCount) continue
@@ -440,41 +509,58 @@ fun CandlestickChart(
 
                             if (sig.isEntry) {
                                 if (sig.direction == TradeDirection.LONG) {
-                                    // BUY Marker (Up Arrow below candle Low)
-                                    val y = priceToY(sigCandle.low) + 16.dp.toPx()
-                                    drawSignalArrow(centerX, y, isUp = true, color = BullGreen)
+                                    val y = priceToY(sigCandle.low) + 14.dp.toPx()
+                                    drawSignalArrow(centerX, y, isUp = true, color = BentoGreen)
                                 } else {
-                                    // SHORT Marker (Down Arrow above candle High)
-                                    val y = priceToY(sigCandle.high) - 16.dp.toPx()
-                                    drawSignalArrow(centerX, y, isUp = false, color = BearRed)
+                                    val y = priceToY(sigCandle.high) - 14.dp.toPx()
+                                    drawSignalArrow(centerX, y, isUp = false, color = BentoRed)
                                 }
                             } else {
-                                // Exit Marker
                                 val y = if (sig.direction == TradeDirection.LONG) {
-                                    priceToY(sigCandle.high) - 14.dp.toPx()
+                                    priceToY(sigCandle.high) - 12.dp.toPx()
                                 } else {
-                                    priceToY(sigCandle.low) + 14.dp.toPx()
+                                    priceToY(sigCandle.low) + 12.dp.toPx()
                                 }
                                 drawCircle(
-                                    color = if (sig.exitReason == ExitReason.TAKE_PROFIT) BullGreen else BearRed,
-                                    radius = 4.5.dp.toPx(),
+                                    color = if (sig.exitReason == ExitReason.TAKE_PROFIT) BentoGreen else BentoRed,
+                                    radius = 4.dp.toPx(),
                                     center = Offset(centerX, y)
                                 )
                             }
                         }
                     }
 
-                    // Highlight selected bar crosshair
+                    // Interactive Crosshair on touch
                     selectedBarIndex?.let { sel ->
                         val relIdx = sel - startIdx
                         if (relIdx in 0 until barCount) {
                             val centerX = (relIdx * candleSpacing) + (candleSpacing / 2f)
+                            val candle = visibleCandles[relIdx]
+                            val closeY = priceToY(candle.close)
+
+                            // Vertical crosshair line
                             drawLine(
-                                color = CyanAccent.copy(alpha = 0.7f),
+                                color = BentoLilac.copy(alpha = 0.7f),
                                 start = Offset(centerX, 0f),
                                 end = Offset(centerX, totalHeight),
-                                strokeWidth = 1.5f,
-                                pathEffect = androidx.compose.ui.graphics.PathEffect.dashPathEffect(floatArrayOf(10f, 10f))
+                                strokeWidth = 1.2f,
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f))
+                            )
+
+                            // Horizontal price line
+                            drawLine(
+                                color = BentoLilac.copy(alpha = 0.5f),
+                                start = Offset(0f, closeY),
+                                end = Offset(chartWidth, closeY),
+                                strokeWidth = 1f,
+                                pathEffect = PathEffect.dashPathEffect(floatArrayOf(8f, 8f))
+                            )
+
+                            // Highlight dot at close
+                            drawCircle(
+                                color = BentoLilac,
+                                radius = 4.dp.toPx(),
+                                center = Offset(centerX, closeY)
                             )
                         }
                     }
@@ -485,16 +571,16 @@ fun CandlestickChart(
 }
 
 private fun DrawScope.drawSignalArrow(x: Float, y: Float, isUp: Boolean, color: Color) {
-    val size = 7.dp.toPx()
+    val size = 6.dp.toPx()
     val path = Path()
     if (isUp) {
-        // Points upwards (BUY)
+        // Upward arrow for BUY
         path.moveTo(x, y - size)
         path.lineTo(x - size, y + size)
         path.lineTo(x + size, y + size)
         path.close()
     } else {
-        // Points downwards (SELL/SHORT)
+        // Downward arrow for SELL
         path.moveTo(x, y + size)
         path.lineTo(x - size, y - size)
         path.lineTo(x + size, y - size)
@@ -504,14 +590,26 @@ private fun DrawScope.drawSignalArrow(x: Float, y: Float, isUp: Boolean, color: 
 }
 
 @Composable
-private fun LegendPill(label: String, color: Color) {
-    Row(verticalAlignment = Alignment.CenterVertically) {
+private fun LegendPill(label: String, color: Color, isActive: Boolean = true, onClick: () -> Unit = {}) {
+    Row(
+        modifier = Modifier
+            .clickable { onClick() }
+            .padding(vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
         Box(
             modifier = Modifier
-                .size(8.dp)
-                .background(color, CircleShape)
+                .size(7.dp)
+                .background(if (isActive) color else BentoBorder, CircleShape)
         )
         Spacer(modifier = Modifier.width(4.dp))
-        Text(text = label, style = TextStyle(fontSize = 10.sp, color = TextSecondary))
+        Text(
+            text = label,
+            style = TextStyle(
+                fontSize = 10.sp,
+                color = if (isActive) BentoTextSecondary else BentoTextMuted,
+                fontWeight = if (isActive) FontWeight.Medium else FontWeight.Normal
+            )
+        )
     }
 }

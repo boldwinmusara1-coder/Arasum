@@ -229,6 +229,113 @@ object StrategyOptimizer {
                 }
             }
 
+            StrategyType.SMC_CONCEPTS -> {
+                val bosLookbacks = listOf(3, 5, 8, 12)
+                val obLookbacks = listOf(5, 10, 15, 20)
+                for (bosLb in bosLookbacks) {
+                    for (obLb in obLookbacks) {
+                        val strat = baseStrategy.copy(
+                            id = "opt_smc_${bosLb}_${obLb}",
+                            name = "SMC (BOS $bosLb, OB $obLb)",
+                            indicatorConfig = baseStrategy.indicatorConfig.copy(
+                                smcConfig = baseStrategy.indicatorConfig.smcConfig.copy(
+                                    bosLookback = bosLb,
+                                    chochLookback = bosLb,
+                                    obLookback = obLb
+                                )
+                            )
+                        )
+                        val res = BacktestEngine.runBacktest(candles, asset, regime, timeframe, strat, risk)
+                        results.add(
+                            OptimizationResult(
+                                param1Label = "BOS Lookback",
+                                param1Value = bosLb.toDouble(),
+                                param2Label = "OB Lookback",
+                                param2Value = obLb.toDouble(),
+                                netProfitPercent = res.metrics.netProfitPercent,
+                                winRatePercent = res.metrics.winRatePercent,
+                                totalTrades = res.metrics.totalTrades,
+                                profitFactor = res.metrics.profitFactor,
+                                maxDrawdownPercent = res.metrics.maxDrawdownPercent,
+                                sharpeRatio = res.metrics.sharpeRatio,
+                                strategy = strat
+                            )
+                        )
+                    }
+                }
+            }
+
+            StrategyType.ICT_CONCEPTS -> {
+                val fvgMultipliers = listOf(0.2, 0.4, 0.6, 0.8)
+                val sweepWicks = listOf(0.10, 0.15, 0.25, 0.35)
+                for (fvgMult in fvgMultipliers) {
+                    for (sweepWick in sweepWicks) {
+                        val strat = baseStrategy.copy(
+                            id = "opt_ict_${fvgMult}_${sweepWick}",
+                            name = "ICT (FVG ${fvgMult}x, Sweep ${sweepWick}%)",
+                            indicatorConfig = baseStrategy.indicatorConfig.copy(
+                                smcConfig = baseStrategy.indicatorConfig.smcConfig.copy(
+                                    fvgMinGapAtrMultiple = fvgMult,
+                                    sweepWickMinPct = sweepWick
+                                )
+                            )
+                        )
+                        val res = BacktestEngine.runBacktest(candles, asset, regime, timeframe, strat, risk)
+                        results.add(
+                            OptimizationResult(
+                                param1Label = "FVG Gap ATR",
+                                param1Value = fvgMult,
+                                param2Label = "Sweep Wick %",
+                                param2Value = sweepWick,
+                                netProfitPercent = res.metrics.netProfitPercent,
+                                winRatePercent = res.metrics.winRatePercent,
+                                totalTrades = res.metrics.totalTrades,
+                                profitFactor = res.metrics.profitFactor,
+                                maxDrawdownPercent = res.metrics.maxDrawdownPercent,
+                                sharpeRatio = res.metrics.sharpeRatio,
+                                strategy = strat
+                            )
+                        )
+                    }
+                }
+            }
+
+            StrategyType.SMC_ICT_CONCEPTS -> {
+                val confluences = listOf(1, 2, 3)
+                val obLookbacks = listOf(8, 15, 20)
+                for (conf in confluences) {
+                    for (obLb in obLookbacks) {
+                        val strat = baseStrategy.copy(
+                            id = "opt_smc_ict_${conf}_${obLb}",
+                            name = "SMC/ICT (Min Conf $conf, OB $obLb)",
+                            indicatorConfig = baseStrategy.indicatorConfig.copy(
+                                smcConfig = baseStrategy.indicatorConfig.smcConfig.copy(
+                                    minConfluences = conf,
+                                    requireConfluence = conf > 1,
+                                    obLookback = obLb
+                                )
+                            )
+                        )
+                        val res = BacktestEngine.runBacktest(candles, asset, regime, timeframe, strat, risk)
+                        results.add(
+                            OptimizationResult(
+                                param1Label = "Min Confluence",
+                                param1Value = conf.toDouble(),
+                                param2Label = "OB Lookback",
+                                param2Value = obLb.toDouble(),
+                                netProfitPercent = res.metrics.netProfitPercent,
+                                winRatePercent = res.metrics.winRatePercent,
+                                totalTrades = res.metrics.totalTrades,
+                                profitFactor = res.metrics.profitFactor,
+                                maxDrawdownPercent = res.metrics.maxDrawdownPercent,
+                                sharpeRatio = res.metrics.sharpeRatio,
+                                strategy = strat
+                            )
+                        )
+                    }
+                }
+            }
+
             else -> {
                 // Default fallback: ATR period vs Multiplier
                 val atrPeriods = listOf(7, 10, 14, 20)

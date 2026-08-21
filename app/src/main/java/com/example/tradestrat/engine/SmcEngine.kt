@@ -545,7 +545,7 @@ class SmcEngine(
         // ---------------------------------------------------------------------
         // 10. Confluence Evaluation & Signal Aggregation
         // ---------------------------------------------------------------------
-        val requiredConfluence = max(1, config.minConfluences)
+        val requiredConfluence = if (config.requireConfluence) max(2, config.minConfluences) else 1
         var rawLong = bullishVotes >= requiredConfluence
         var rawShort = bearishVotes >= requiredConfluence
 
