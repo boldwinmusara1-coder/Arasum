@@ -4,7 +4,6 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
-import androidx.compose.animation.*
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -34,8 +33,9 @@ enum class AppNavigationTab(
 ) {
     DASHBOARD("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard, "nav_tab_dashboard"),
     BACKTEST("Backtest", Icons.AutoMirrored.Filled.ShowChart, Icons.AutoMirrored.Outlined.ShowChart, "nav_tab_backtest"),
-    STRATEGIES("Strategies", Icons.Filled.Tune, Icons.Outlined.Tune, "nav_tab_strategies"),
-    SMC_ICT("SMC/ICT", Icons.Filled.AccountBalance, Icons.Outlined.AccountBalance, "nav_tab_smc_ict"),
+    REPLAY("Replay", Icons.Filled.FastForward, Icons.Outlined.FastForward, "nav_tab_replay"),
+    LAB("Lab", Icons.Filled.Science, Icons.Outlined.Science, "nav_tab_lab"),
+    JOURNAL("Journal", Icons.Filled.BookmarkBorder, Icons.Outlined.BookmarkBorder, "nav_tab_journal"),
     RESULTS("Results", Icons.Filled.Assessment, Icons.Outlined.Assessment, "nav_tab_results"),
     SETTINGS("Settings", Icons.Filled.Settings, Icons.Outlined.Settings, "nav_tab_settings")
 }
@@ -43,11 +43,13 @@ enum class AppNavigationTab(
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        ThemeManager.init(applicationContext)
         enableEdgeToEdge()
         setContent {
             MyApplicationTheme {
                 val backtestViewModel: BacktestViewModel = viewModel()
                 var currentTab by remember { mutableStateOf(AppNavigationTab.DASHBOARD) }
+                var showSmcIctModal by remember { mutableStateOf(false) }
                 val theme = LocalAppTheme.current
 
                 Scaffold(
@@ -74,7 +76,7 @@ class MainActivity : ComponentActivity() {
                                     label = {
                                         Text(
                                             text = tab.title,
-                                            fontSize = 10.sp,
+                                            fontSize = 9.sp,
                                             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
                                             maxLines = 1
                                         )
@@ -97,26 +99,37 @@ class MainActivity : ComponentActivity() {
                             viewModel = backtestViewModel,
                             modifier = Modifier.padding(innerPadding),
                             onNavigateToBacktest = { currentTab = AppNavigationTab.BACKTEST },
-                            onNavigateToStrategies = { currentTab = AppNavigationTab.STRATEGIES },
+                            onNavigateToReplay = { currentTab = AppNavigationTab.REPLAY },
+                            onNavigateToStrategyLab = { currentTab = AppNavigationTab.LAB },
+                            onNavigateToJournal = { currentTab = AppNavigationTab.JOURNAL },
+                            onNavigateToSmcIct = { currentTab = AppNavigationTab.BACKTEST },
                             onNavigateToResults = { currentTab = AppNavigationTab.RESULTS }
                         )
 
                         AppNavigationTab.BACKTEST -> BacktestScreen(
                             viewModel = backtestViewModel,
                             modifier = Modifier.padding(innerPadding),
+                            onNavigateToSmcIct = { currentTab = AppNavigationTab.LAB },
                             onBacktestComplete = { currentTab = AppNavigationTab.RESULTS }
                         )
 
-                        AppNavigationTab.STRATEGIES -> StrategiesScreen(
+                        AppNavigationTab.REPLAY -> ReplayScreen(
                             viewModel = backtestViewModel,
                             modifier = Modifier.padding(innerPadding),
-                            onNavigateToBacktest = { currentTab = AppNavigationTab.BACKTEST }
+                            onNavigateBack = { currentTab = AppNavigationTab.DASHBOARD }
                         )
 
-                        AppNavigationTab.SMC_ICT -> SmcIctScreen(
+                        AppNavigationTab.LAB -> StrategyLabScreen(
                             viewModel = backtestViewModel,
                             modifier = Modifier.padding(innerPadding),
-                            onNavigateToBacktest = { currentTab = AppNavigationTab.BACKTEST }
+                            onNavigateBack = { currentTab = AppNavigationTab.DASHBOARD },
+                            onApplyStrategy = { currentTab = AppNavigationTab.BACKTEST }
+                        )
+
+                        AppNavigationTab.JOURNAL -> JournalScreen(
+                            viewModel = backtestViewModel,
+                            modifier = Modifier.padding(innerPadding),
+                            onNavigateBack = { currentTab = AppNavigationTab.DASHBOARD }
                         )
 
                         AppNavigationTab.RESULTS -> ResultsScreen(

@@ -27,6 +27,7 @@ import androidx.compose.ui.unit.sp
 import com.example.tradestrat.data.MarketDataProvider
 import com.example.tradestrat.model.*
 import com.example.tradestrat.ui.BacktestViewModel
+import com.example.tradestrat.ui.components.DateRangePreset
 import com.example.ui.theme.LocalAppTheme
 import java.util.Locale
 
@@ -35,6 +36,7 @@ import java.util.Locale
 fun BacktestScreen(
     viewModel: BacktestViewModel,
     modifier: Modifier = Modifier,
+    onNavigateToSmcIct: () -> Unit = {},
     onBacktestComplete: () -> Unit = {}
 ) {
     val theme = LocalAppTheme.current
@@ -43,13 +45,46 @@ fun BacktestScreen(
     val selectedStrategy by viewModel.selectedStrategy.collectAsState()
     val riskParameters by viewModel.riskParameters.collectAsState()
     val isBacktesting by viewModel.isBacktesting.collectAsState()
-    val currentResult by viewModel.currentResult.collectAsState()
+    val progress by viewModel.backtestProgress.collectAsState()
+    val selectedDatePreset by viewModel.selectedDatePreset.collectAsState()
+    val favoriteSymbols by viewModel.favoriteSymbols.collectAsState()
+    val recentSymbols by viewModel.recentSymbols.collectAsState()
+    val dataFetchError by viewModel.dataFetchError.collectAsState()
 
+    var searchQuery by remember { mutableStateOf("") }
     var selectedCategory by remember { mutableStateOf<AssetCategory?>(null) }
+    var showOnlyFavorites by remember { mutableStateOf(false) }
     var showAdvancedSettings by remember { mutableStateOf(false) }
 
-    // Date range preset state
-    var selectedDateRangePreset by remember { mutableStateOf("1Y") }
+    // Risk inputs
+    var initialCapitalInput by remember(riskParameters) {
+        mutableStateOf(riskParameters.initialCapital.toInt().toString())
+    }
+    var riskPercentInput by remember(riskParameters) {
+        mutableStateOf(riskParameters.riskPerTradePercent.toString())
+    }
+    var stopLossAtrInput by remember(riskParameters) {
+        mutableStateOf(riskParameters.stopLossAtrMultiplier.toString())
+    }
+    var takeProfitRInput by remember(riskParameters) {
+        mutableStateOf(riskParameters.takeProfitRMultiple.toString())
+    }
+    var slippageBpsInput by remember(riskParameters) {
+        mutableStateOf((riskParameters.slippagePercent * 10000.0).toInt().toString())
+    }
+    var commissionBpsInput by remember(riskParameters) {
+        mutableStateOf((riskParameters.commissionPercent * 10000.0).toInt().toString())
+    }
+
+    // Filtered assets
+    val filteredAssets = remember(searchQuery, selectedCategory, showOnlyFavorites, favoriteSymbols) {
+        MarketDataProvider.ASSETS.filter { asset ->
+            val matchesSearch = searchQuery.isBlank() || asset.symbol.contains(searchQuery, ignoreCase = true) || asset.name.contains(searchQuery, ignoreCase = true)
+            val matchesCategory = selectedCategory == null || asset.category == selectedCategory
+            val matchesFav = !showOnlyFavorites || favoriteSymbols.contains(asset.symbol)
+            matchesSearch && matchesCategory && matchesFav
+        }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -59,7 +94,7 @@ fun BacktestScreen(
         verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(top = 12.dp, bottom = 96.dp)
     ) {
-        // Section Header
+        // Header
         item {
             Column(modifier = Modifier.padding(top = 4.dp)) {
                 Text(
@@ -70,7 +105,7 @@ fun BacktestScreen(
                     fontSize = 24.sp
                 )
                 Text(
-                    text = "Configure parameters and run high-fidelity simulations",
+                    text = "Primary configuration & institutional risk modeling",
                     style = MaterialTheme.typography.bodySmall,
                     color = theme.textSecondary,
                     fontSize = 12.sp
@@ -78,13 +113,57 @@ fun BacktestScreen(
             }
         }
 
-        // STEP 1: MARKET SELECTION
+        // Live Backtest Progress / Cancellation Banner
+        if (isBacktesting) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = theme.surfaceElevated),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.brandPrimary))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp, color = theme.brandPrimary)
+                                Text("Executing Backtest Simulation...", fontWeight = FontWeight.Bold, color = theme.textPrimary, fontSize = 13.sp)
+                            }
+
+                            Button(
+                                onClick = { viewModel.cancelBacktest() },
+                                colors = ButtonDefaults.buttonColors(containerColor = theme.accentRed.copy(alpha = 0.15f)),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                shape = RoundedCornerShape(8.dp)
+                            ) {
+                                Text("Cancel", color = theme.accentRed, fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                            }
+                        }
+
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = theme.brandPrimary)
+
+                        Text(
+                            text = "${progress.strategyName} • ${progress.symbol} • ${progress.timeframe} • ${progress.currentDateStr}",
+                            fontSize = 11.sp,
+                            color = theme.textSecondary
+                        )
+                    }
+                }
+            }
+        }
+
+        // 1. MARKET SELECTOR
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().testTag("config_market_card"),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag("config_market_card"),
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = theme.surface),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
@@ -94,88 +173,125 @@ fun BacktestScreen(
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                             Box(
-                                modifier = Modifier.size(24.dp).background(theme.brandPrimaryContainer, CircleShape),
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .background(theme.brandPrimary.copy(alpha = 0.18f), CircleShape),
                                 contentAlignment = Alignment.Center
                             ) {
-                                Text("1", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.brandPrimaryText)
+                                Text("1", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.brandPrimary)
                             }
                             Text(
-                                text = "Market & Instrument",
+                                text = "Market & Asset",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = theme.textPrimary
                             )
                         }
 
-                        Surface(shape = RoundedCornerShape(8.dp), color = theme.brandPrimaryContainer) {
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = theme.brandPrimary.copy(alpha = 0.15f)
+                        ) {
                             Text(
-                                text = selectedAsset.symbol,
+                                text = "${selectedAsset.symbol} (${selectedAsset.category.label})",
                                 fontSize = 12.sp,
                                 fontWeight = FontWeight.Bold,
-                                color = theme.brandPrimaryText,
+                                color = theme.brandPrimary,
                                 modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
                             )
                         }
                     }
 
-                    // Category filter chips
+                    // Search & Favorites Bar
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        OutlinedTextField(
+                            value = searchQuery,
+                            onValueChange = { searchQuery = it },
+                            placeholder = { Text("Search symbol (BTC, EUR, AAPL)...", fontSize = 12.sp, color = theme.textMuted) },
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp),
+                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = "Search", tint = theme.textMuted, modifier = Modifier.size(18.dp)) },
+                            colors = OutlinedTextFieldDefaults.colors(
+                                focusedContainerColor = theme.surfaceElevated,
+                                unfocusedContainerColor = theme.surfaceElevated,
+                                focusedBorderColor = theme.brandPrimary,
+                                unfocusedBorderColor = theme.borderSubtle
+                            ),
+                            singleLine = true
+                        )
+
+                        IconButton(
+                            onClick = { showOnlyFavorites = !showOnlyFavorites },
+                            modifier = Modifier
+                                .size(44.dp)
+                                .background(if (showOnlyFavorites) theme.brandPrimary.copy(alpha = 0.2f) else theme.surfaceElevated, RoundedCornerShape(10.dp))
+                        ) {
+                            Icon(
+                                imageVector = if (showOnlyFavorites) Icons.Default.Star else Icons.Default.StarBorder,
+                                contentDescription = "Favorites",
+                                tint = if (showOnlyFavorites) Color(0xFFF59E0B) else theme.textMuted
+                            )
+                        }
+                    }
+
+                    // Category Chips
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         item {
                             FilterChip(
                                 selected = selectedCategory == null,
                                 onClick = { selectedCategory = null },
                                 label = { Text("All", fontSize = 11.sp) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = theme.brandPrimary,
-                                    selectedLabelColor = Color.White
-                                )
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = theme.brandPrimary.copy(alpha = 0.2f), selectedLabelColor = theme.brandPrimary)
                             )
                         }
                         items(AssetCategory.values()) { cat ->
                             FilterChip(
                                 selected = selectedCategory == cat,
                                 onClick = { selectedCategory = cat },
-                                label = { Text(cat.name, fontSize = 11.sp) },
-                                colors = FilterChipDefaults.filterChipColors(
-                                    selectedContainerColor = theme.brandPrimary,
-                                    selectedLabelColor = Color.White
-                                )
+                                label = { Text(cat.label, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(selectedContainerColor = theme.brandPrimary.copy(alpha = 0.2f), selectedLabelColor = theme.brandPrimary)
                             )
                         }
                     }
 
-                    // Asset Horizontal Picker
-                    val filteredAssets = MarketDataProvider.ASSETS.filter {
-                        selectedCategory == null || it.category == selectedCategory
-                    }
-
+                    // Asset Grid / Horizontal Carousel
                     LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         items(filteredAssets) { asset ->
-                            val isSelected = selectedAsset.id == asset.id
+                            val isSelected = asset.symbol == selectedAsset.symbol
+                            val isFav = favoriteSymbols.contains(asset.symbol)
+
                             Surface(
                                 modifier = Modifier
-                                    .clip(RoundedCornerShape(12.dp))
                                     .clickable { viewModel.setAsset(asset) }
-                                    .testTag("asset_item_${asset.symbol.replace('/', '_')}"),
+                                    .width(130.dp),
                                 shape = RoundedCornerShape(12.dp),
-                                color = if (isSelected) theme.brandPrimaryContainer else theme.surfaceElevated,
-                                border = CardDefaults.outlinedCardBorder().copy(
-                                    brush = androidx.compose.ui.graphics.SolidColor(if (isSelected) theme.brandPrimary else theme.border)
-                                )
+                                color = if (isSelected) theme.brandPrimary.copy(alpha = 0.15f) else theme.surfaceElevated,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) theme.brandPrimary else theme.borderSubtle)
                             ) {
-                                Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                                    Text(
-                                        text = asset.symbol,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = if (isSelected) theme.brandPrimaryText else theme.textPrimary
-                                    )
-                                    Text(
-                                        text = asset.name,
-                                        fontSize = 10.sp,
-                                        color = theme.textSecondary,
-                                        maxLines = 1
-                                    )
+                                Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                                    Row(
+                                        modifier = Modifier.fillMaxWidth(),
+                                        horizontalArrangement = Arrangement.SpaceBetween,
+                                        verticalAlignment = Alignment.CenterVertically
+                                    ) {
+                                        Text(text = asset.symbol, fontWeight = FontWeight.Bold, fontSize = 13.sp, color = theme.textPrimary)
+                                        IconButton(
+                                            onClick = { viewModel.toggleFavoriteSymbol(asset.symbol) },
+                                            modifier = Modifier.size(20.dp)
+                                        ) {
+                                            Icon(
+                                                imageVector = if (isFav) Icons.Default.Star else Icons.Default.StarBorder,
+                                                contentDescription = "Fav",
+                                                tint = if (isFav) Color(0xFFF59E0B) else theme.textMuted,
+                                                modifier = Modifier.size(14.dp)
+                                            )
+                                        }
+                                    }
+                                    Text(text = asset.name, fontSize = 10.sp, color = theme.textMuted, maxLines = 1)
                                 }
                             }
                         }
@@ -184,220 +300,54 @@ fun BacktestScreen(
             }
         }
 
-        // STEP 2: TIMEFRAME SELECTION (Includes 5m, 15m, 30m, 1h, 4h, 1D, 1W)
+        // 2. TIMEFRAME SELECTOR (1-Tap Horizontal UX)
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().testTag("config_timeframe_card"),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = theme.surface),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
             ) {
                 Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Box(
-                                modifier = Modifier.size(24.dp).background(theme.brandPrimaryContainer, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("2", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.brandPrimaryText)
-                            }
-                            Text(
-                                text = "Timeframe",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = theme.textPrimary
-                            )
-                        }
-
-                        Text(
-                            text = selectedTimeframe.label,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = theme.brandPrimary
-                        )
-                    }
-
-                    // Prominent Timeframe Pills (All standard plus 5m, 30m)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
-                    ) {
-                        listOf(Timeframe.M5, Timeframe.M15, Timeframe.M30, Timeframe.H1, Timeframe.H4, Timeframe.D1).forEach { tf ->
-                            val isSelected = selectedTimeframe == tf
-                            Surface(
-                                modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { viewModel.setTimeframe(tf) }
-                                    .testTag("timeframe_btn_${tf.name.lowercase()}"),
-                                shape = RoundedCornerShape(10.dp),
-                                color = if (isSelected) theme.brandPrimary else theme.surfaceElevated,
-                                border = CardDefaults.outlinedCardBorder().copy(
-                                    brush = androidx.compose.ui.graphics.SolidColor(if (isSelected) theme.brandPrimary else theme.border)
-                                )
-                            ) {
-                                Box(
-                                    modifier = Modifier.padding(vertical = 10.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = tf.label,
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else theme.textPrimary
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // STEP 3: STRATEGY SELECTION
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth().testTag("config_strategy_card"),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = theme.surface),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Box(
-                                modifier = Modifier.size(24.dp).background(theme.brandPrimaryContainer, CircleShape),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text("3", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.brandPrimaryText)
-                            }
-                            Text(
-                                text = "Strategy Engine",
-                                style = MaterialTheme.typography.titleMedium,
-                                fontWeight = FontWeight.Bold,
-                                color = theme.textPrimary
-                            )
-                        }
-
-                        Surface(shape = RoundedCornerShape(8.dp), color = theme.brandPrimaryContainer) {
-                            Text(
-                                text = selectedStrategy.strategyType.name,
-                                fontSize = 10.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = theme.brandPrimaryText,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)
-                            )
-                        }
-                    }
-
-                    // Strategy Presets List
-                    StrategyDefinition.PRESETS.forEach { strategy ->
-                        val isSelected = selectedStrategy.id == strategy.id
-                        Surface(
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(
                             modifier = Modifier
-                                .fillMaxWidth()
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { viewModel.setStrategy(strategy) }
-                                .testTag("strategy_option_${strategy.id}"),
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) theme.brandPrimaryContainer.copy(alpha = 0.6f) else theme.surfaceElevated,
-                            border = CardDefaults.outlinedCardBorder().copy(
-                                brush = androidx.compose.ui.graphics.SolidColor(if (isSelected) theme.brandPrimary else theme.border)
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier.padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = strategy.name,
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = if (isSelected) theme.brandPrimaryText else theme.textPrimary
-                                    )
-                                    Text(
-                                        text = strategy.description,
-                                        fontSize = 11.sp,
-                                        color = theme.textSecondary,
-                                        maxLines = 2
-                                    )
-                                }
-
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = { viewModel.setStrategy(strategy) },
-                                    colors = RadioButtonDefaults.colors(selectedColor = theme.brandPrimary)
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // STEP 4: DATE RANGE PRESETS
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth().testTag("config_date_range_card"),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = theme.surface),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(
-                            modifier = Modifier.size(24.dp).background(theme.brandPrimaryContainer, CircleShape),
+                                .size(24.dp)
+                                .background(theme.brandPrimary.copy(alpha = 0.18f), CircleShape),
                             contentAlignment = Alignment.Center
                         ) {
-                            Text("4", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.brandPrimaryText)
+                            Text("2", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.brandPrimary)
                         }
                         Text(
-                            text = "Historical Date Window",
+                            text = "Timeframe",
                             style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
                             color = theme.textPrimary
                         )
                     }
 
-                    Row(
+                    // Fast 1-Tap Horizontal Timeframe Selector
+                    LazyRow(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
-                        listOf("30D", "90D", "180D", "1Y", "2Y", "5Y").forEach { preset ->
-                            val isSelected = selectedDateRangePreset == preset
+                        items(Timeframe.values()) { tf ->
+                            val isSelected = tf == selectedTimeframe
                             Surface(
                                 modifier = Modifier
-                                    .weight(1f)
-                                    .clip(RoundedCornerShape(10.dp))
-                                    .clickable { selectedDateRangePreset = preset }
-                                    .testTag("date_preset_${preset.lowercase()}"),
+                                    .clickable { viewModel.setTimeframe(tf) }
+                                    .weight(1f, fill = false),
                                 shape = RoundedCornerShape(10.dp),
                                 color = if (isSelected) theme.brandPrimary else theme.surfaceElevated,
-                                border = CardDefaults.outlinedCardBorder().copy(
-                                    brush = androidx.compose.ui.graphics.SolidColor(if (isSelected) theme.brandPrimary else theme.border)
-                                )
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) theme.brandPrimary else theme.borderSubtle)
                             ) {
-                                Box(
-                                    modifier = Modifier.padding(vertical = 8.dp),
-                                    contentAlignment = Alignment.Center
-                                ) {
-                                    Text(
-                                        text = preset,
-                                        fontSize = 11.sp,
-                                        fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                        color = if (isSelected) Color.White else theme.textPrimary
-                                    )
-                                }
+                                Text(
+                                    text = tf.label,
+                                    color = if (isSelected) Color.White else theme.textPrimary,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 13.sp,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)
+                                )
                             }
                         }
                     }
@@ -405,296 +355,418 @@ fun BacktestScreen(
             }
         }
 
-        // STEP 5: CAPITAL & RISK PARAMETERS
+        // 3. STRATEGY SELECTOR
         item {
             Card(
-                modifier = Modifier.fillMaxWidth().testTag("config_risk_card"),
+                modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(18.dp),
                 colors = CardDefaults.cardColors(containerColor = theme.surface),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
             ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(
-                            modifier = Modifier.size(24.dp).background(theme.brandPrimaryContainer, CircleShape),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text("5", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.brandPrimaryText)
-                        }
-                        Text(
-                            text = "Capital, Position Sizing & Exits",
-                            style = MaterialTheme.typography.titleMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = theme.textPrimary
-                        )
-                    }
-
-                    // Initial Capital & Sizing
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = "${riskParameters.initialCapital.toInt()}",
-                            onValueChange = { str ->
-                                val v = str.toDoubleOrNull() ?: riskParameters.initialCapital
-                                viewModel.updateRiskParameters(riskParameters.copy(initialCapital = v))
-                            },
-                            label = { Text("Initial Capital ($)", fontSize = 11.sp) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f).testTag("input_initial_capital"),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = "${riskParameters.positionSizeValue.toInt()}",
-                            onValueChange = { str ->
-                                val v = str.toDoubleOrNull() ?: riskParameters.positionSizeValue
-                                viewModel.updateRiskParameters(riskParameters.copy(positionSizeValue = v))
-                            },
-                            label = { Text("Size / Trade ($)", fontSize = 11.sp) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f).testTag("input_position_size"),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-
-                    // Leverage & Shorting
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Column {
-                            Text("Account Leverage: ${riskParameters.leverage.toInt()}x", fontSize = 13.sp, fontWeight = FontWeight.SemiBold, color = theme.textPrimary)
-                            Text("Margin Multiplier", fontSize = 10.sp, color = theme.textSecondary)
-                        }
-
-                        Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            listOf(1.0, 2.0, 5.0, 10.0).forEach { lev ->
-                                val isSelected = riskParameters.leverage == lev
-                                Surface(
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(8.dp))
-                                        .clickable { viewModel.updateRiskParameters(riskParameters.copy(leverage = lev)) },
-                                    shape = RoundedCornerShape(8.dp),
-                                    color = if (isSelected) theme.brandPrimary else theme.surfaceElevated
-                                ) {
-                                    Text(
-                                        text = "${lev.toInt()}x",
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Bold,
-                                        color = if (isSelected) Color.White else theme.textPrimary,
-                                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                                    )
-                                }
-                            }
-                        }
-                    }
-
-                    // Stop Loss & Take Profit %
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = "${riskParameters.stopLossValue}",
-                            onValueChange = { str ->
-                                val v = str.toDoubleOrNull() ?: riskParameters.stopLossValue
-                                viewModel.updateRiskParameters(riskParameters.copy(stopLossValue = v))
-                            },
-                            label = { Text("Stop Loss (%)", fontSize = 11.sp) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.weight(1f).testTag("input_stop_loss"),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = "${riskParameters.takeProfitValue}",
-                            onValueChange = { str ->
-                                val v = str.toDoubleOrNull() ?: riskParameters.takeProfitValue
-                                viewModel.updateRiskParameters(riskParameters.copy(takeProfitValue = v))
-                            },
-                            label = { Text("Take Profit (%)", fontSize = 11.sp) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal),
-                            modifier = Modifier.weight(1f).testTag("input_take_profit"),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-
-                    // Realistic Execution Settings (Slippage & Commissions)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        OutlinedTextField(
-                            value = "${riskParameters.slippageBps.toInt()}",
-                            onValueChange = { str ->
-                                val v = str.toDoubleOrNull() ?: riskParameters.slippageBps
-                                viewModel.updateRiskParameters(riskParameters.copy(slippageBps = v))
-                            },
-                            label = { Text("Slippage (bps)", fontSize = 11.sp) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f).testTag("input_slippage_bps"),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-
-                        OutlinedTextField(
-                            value = "${riskParameters.commissionBps.toInt()}",
-                            onValueChange = { str ->
-                                val v = str.toDoubleOrNull() ?: riskParameters.commissionBps
-                                viewModel.updateRiskParameters(riskParameters.copy(commissionBps = v))
-                            },
-                            label = { Text("Commission (bps)", fontSize = 11.sp) },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.weight(1f).testTag("input_commission_bps"),
-                            shape = RoundedCornerShape(12.dp)
-                        )
-                    }
-                }
-            }
-        }
-
-        // STEP 6: ADVANCED SETTINGS ACCORDION
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth().testTag("config_advanced_accordion"),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = theme.surface),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
-            ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .clickable { showAdvancedSettings = !showAdvancedSettings },
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Icon(Icons.Default.Settings, contentDescription = null, tint = theme.textSecondary, modifier = Modifier.size(20.dp))
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .background(theme.brandPrimary.copy(alpha = 0.18f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("3", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.brandPrimary)
+                            }
                             Text(
-                                text = "Advanced Execution & Safeguards",
+                                text = "Strategy Algorithm",
                                 style = MaterialTheme.typography.titleMedium,
                                 fontWeight = FontWeight.Bold,
                                 color = theme.textPrimary
                             )
                         }
 
-                        Icon(
-                            imageVector = if (showAdvancedSettings) Icons.Default.ExpandLess else Icons.Default.ExpandMore,
-                            contentDescription = "Toggle",
-                            tint = theme.textSecondary
+                        if (selectedStrategy.strategyType in listOf(StrategyType.SMC_CONCEPTS, StrategyType.ICT_CONCEPTS, StrategyType.SMC_ICT_CONCEPTS)) {
+                            TextButton(onClick = onNavigateToSmcIct) {
+                                Text("Configure SMC/ICT", fontSize = 11.sp, color = theme.brandPrimary, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                    }
+
+                    // Strategy Presets with clear descriptions
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        StrategyDefinition.PRESETS.forEach { strat ->
+                            val isSelected = strat.strategyType == selectedStrategy.strategyType
+                            val badgeColor = when (strat.strategyType) {
+                                StrategyType.SMC_CONCEPTS -> Color(0xFFA855F7)
+                                StrategyType.ICT_CONCEPTS -> Color(0xFFF59E0B)
+                                StrategyType.SMC_ICT_CONCEPTS -> Color(0xFF10B981)
+                                StrategyType.TRENDLINE_BREAK, StrategyType.TRENDLINE_BOUNCE -> Color(0xFF38BDF8)
+                                else -> theme.brandPrimary
+                            }
+
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.setStrategy(strat) },
+                                shape = RoundedCornerShape(12.dp),
+                                color = if (isSelected) badgeColor.copy(alpha = 0.14f) else theme.surfaceElevated,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, if (isSelected) badgeColor else theme.borderSubtle)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(12.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                            Text(
+                                                text = strat.name,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 13.sp,
+                                                color = theme.textPrimary
+                                            )
+                                            Surface(
+                                                shape = RoundedCornerShape(4.dp),
+                                                color = badgeColor.copy(alpha = 0.2f)
+                                            ) {
+                                                Text(
+                                                    text = strat.strategyType.name,
+                                                    fontSize = 9.sp,
+                                                    fontWeight = FontWeight.Bold,
+                                                    color = badgeColor,
+                                                    modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                                )
+                                            }
+                                        }
+
+                                        Spacer(modifier = Modifier.height(2.dp))
+                                        Text(
+                                            text = strat.description,
+                                            fontSize = 11.sp,
+                                            color = theme.textSecondary,
+                                            lineHeight = 14.sp
+                                        )
+                                    }
+
+                                    RadioButton(
+                                        selected = isSelected,
+                                        onClick = { viewModel.setStrategy(strat) },
+                                        colors = RadioButtonDefaults.colors(selectedColor = badgeColor)
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. DATE RANGE PRESETS
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = theme.surface),
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(
+                            modifier = Modifier
+                                .size(24.dp)
+                                .background(theme.brandPrimary.copy(alpha = 0.18f), CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text("4", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.brandPrimary)
+                        }
+                        Text(
+                            text = "Historical Date Range",
+                            style = MaterialTheme.typography.titleMedium,
+                            fontWeight = FontWeight.Bold,
+                            color = theme.textPrimary
                         )
                     }
 
+                    LazyRow(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        items(DateRangePreset.values()) { preset ->
+                            val isSelected = preset == selectedDatePreset
+                            FilterChip(
+                                selected = isSelected,
+                                onClick = { viewModel.setDatePreset(preset) },
+                                label = { Text(preset.label, fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = theme.brandPrimary.copy(alpha = 0.2f),
+                                    selectedLabelColor = theme.brandPrimary
+                                )
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        // 5. RISK PARAMETERS & ADVANCED OPTIONS
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = theme.surface),
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Box(
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .background(theme.brandPrimary.copy(alpha = 0.18f), CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Text("5", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.brandPrimary)
+                            }
+                            Text(
+                                text = "Risk & Position Sizing",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = theme.textPrimary
+                            )
+                        }
+
+                        TextButton(onClick = { showAdvancedSettings = !showAdvancedSettings }) {
+                            Text(
+                                text = if (showAdvancedSettings) "Hide Advanced" else "Advanced Options",
+                                fontSize = 11.sp,
+                                color = theme.brandPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+                    }
+
+                    // Primary Risk Inputs
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        OutlinedTextField(
+                            value = initialCapitalInput,
+                            onValueChange = {
+                                initialCapitalInput = it
+                                it.toDoubleOrNull()?.let { cap -> viewModel.updateRiskParameters(riskParameters.copy(initialCapital = cap)) }
+                            },
+                            label = { Text("Initial Capital ($)", fontSize = 10.sp) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+
+                        OutlinedTextField(
+                            value = riskPercentInput,
+                            onValueChange = {
+                                riskPercentInput = it
+                                it.toDoubleOrNull()?.let { r -> viewModel.updateRiskParameters(riskParameters.copy(positionSizeValue = r)) }
+                            },
+                            label = { Text("Risk Per Trade (%)", fontSize = 10.sp) },
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(10.dp)
+                        )
+                    }
+
+                    // Expandable Advanced Options
                     AnimatedVisibility(visible = showAdvancedSettings) {
                         Column(
-                            modifier = Modifier.padding(top = 12.dp),
+                            modifier = Modifier.padding(top = 8.dp),
                             verticalArrangement = Arrangement.spacedBy(10.dp)
                         ) {
+                            HorizontalDivider(color = theme.borderSubtle, thickness = 1.dp)
+
                             Text(
-                                text = "Execution Model: Next-Bar Open with Slippage & Spread Simulation",
-                                fontSize = 12.sp,
-                                color = theme.textSecondary
+                                text = "EXECUTION & SLIPPAGE ASSUMPTIONS",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = theme.brandPrimary,
+                                fontWeight = FontWeight.Bold,
+                                letterSpacing = 1.sp
                             )
-                            Text(
-                                text = "Intrabar Collision: Pessimistic Stop-Loss First Priority",
-                                fontSize = 12.sp,
-                                color = theme.textSecondary
-                            )
-                            Text(
-                                text = "Mark-to-Market Accounting: Bar-by-bar portfolio equity reconciliation",
-                                fontSize = 12.sp,
-                                color = theme.textSecondary
-                            )
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedTextField(
+                                    value = slippageBpsInput,
+                                    onValueChange = {
+                                        slippageBpsInput = it
+                                        it.toDoubleOrNull()?.let { bps -> viewModel.updateRiskParameters(riskParameters.copy(slippageBps = bps)) }
+                                    },
+                                    label = { Text("Slippage (bps)", fontSize = 10.sp) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+
+                                OutlinedTextField(
+                                    value = commissionBpsInput,
+                                    onValueChange = {
+                                        commissionBpsInput = it
+                                        it.toDoubleOrNull()?.let { bps -> viewModel.updateRiskParameters(riskParameters.copy(commissionBps = bps)) }
+                                    },
+                                    label = { Text("Commission (bps)", fontSize = 10.sp) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                            }
+
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                OutlinedTextField(
+                                    value = stopLossAtrInput,
+                                    onValueChange = {
+                                        stopLossAtrInput = it
+                                        it.toDoubleOrNull()?.let { sl -> viewModel.updateRiskParameters(riskParameters.copy(stopLossValue = sl)) }
+                                    },
+                                    label = { Text("SL ATR Multiplier", fontSize = 10.sp) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+
+                                OutlinedTextField(
+                                    value = takeProfitRInput,
+                                    onValueChange = {
+                                        takeProfitRInput = it
+                                        it.toDoubleOrNull()?.let { tp -> viewModel.updateRiskParameters(riskParameters.copy(takeProfitValue = tp)) }
+                                    },
+                                    label = { Text("Take Profit R-Multiple", fontSize = 10.sp) },
+                                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                                    modifier = Modifier.weight(1f),
+                                    shape = RoundedCornerShape(10.dp)
+                                )
+                            }
                         }
                     }
                 }
             }
         }
 
-        // MAIN RUN CTA BUTTON
+        // ERROR DISPLAY
+        if (dataFetchError != null) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = theme.accentRed.copy(alpha = 0.12f)),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.accentRed.copy(alpha = 0.4f)))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(Icons.Default.ErrorOutline, contentDescription = "Error", tint = theme.accentRed, modifier = Modifier.size(20.dp))
+                            Text("Market Data Fetch Error", fontWeight = FontWeight.Bold, color = theme.accentRed, fontSize = 13.sp)
+                        }
+                        Text(text = dataFetchError ?: "", color = theme.textPrimary, fontSize = 11.sp, lineHeight = 16.sp)
+                    }
+                }
+            }
+        }
+
+        // ACTIVE BACKTEST PROGRESS & CANCEL
+        if (isBacktesting) {
+            item {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    colors = CardDefaults.cardColors(containerColor = theme.surfaceElevated),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.brandPrimary.copy(alpha = 0.3f)))
+                ) {
+                    Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                CircularProgressIndicator(
+                                    modifier = Modifier.size(18.dp),
+                                    strokeWidth = 2.dp,
+                                    color = theme.brandPrimary
+                                )
+                                Text(
+                                    text = progress.currentDateStr.ifEmpty { "Executing quantitative engine..." },
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.Medium,
+                                    color = theme.textPrimary
+                                )
+                            }
+                            OutlinedButton(
+                                onClick = { viewModel.cancelBacktest() },
+                                shape = RoundedCornerShape(8.dp),
+                                contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                                modifier = Modifier.height(30.dp)
+                            ) {
+                                Text("Cancel", fontSize = 11.sp, color = theme.accentRed, fontWeight = FontWeight.Bold)
+                            }
+                        }
+                        LinearProgressIndicator(
+                            progress = { progress.progressPct },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(6.dp)
+                                .clip(RoundedCornerShape(3.dp)),
+                            color = theme.brandPrimary,
+                            trackColor = theme.borderSubtle
+                        )
+                    }
+                }
+            }
+        }
+
+        // RUN BACKTEST BUTTON
         item {
             Button(
                 onClick = {
-                    viewModel.runBacktest()
-                    onBacktestComplete()
+                    if (!isBacktesting) {
+                        viewModel.runBacktest()
+                        onBacktestComplete()
+                    }
                 },
                 enabled = !isBacktesting,
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(54.dp)
-                    .testTag("backtest_run_button"),
-                shape = RoundedCornerShape(16.dp),
+                    .testTag("run_backtest_button"),
+                shape = RoundedCornerShape(14.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = theme.brandPrimary,
-                    contentColor = Color.White
+                    disabledContainerColor = theme.surfaceElevated
                 )
             ) {
                 if (isBacktesting) {
                     CircularProgressIndicator(
-                        modifier = Modifier.size(22.dp),
-                        color = Color.White,
-                        strokeWidth = 2.dp
+                        modifier = Modifier.size(20.dp),
+                        strokeWidth = 2.dp,
+                        color = theme.brandPrimaryText
                     )
-                    Spacer(modifier = Modifier.width(10.dp))
-                    Text("Executing Quantitative Simulation...", fontWeight = FontWeight.Bold, fontSize = 15.sp)
-                } else {
-                    Icon(Icons.Default.PlayArrow, contentDescription = "Run", modifier = Modifier.size(22.dp))
                     Spacer(modifier = Modifier.width(8.dp))
-                    Text("Execute Backtest (${selectedAsset.symbol} • ${selectedTimeframe.label})", fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(
+                        text = "SIMULATING...",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = theme.textSecondary
+                    )
+                } else {
+                    Icon(imageVector = Icons.Default.PlayArrow, contentDescription = "Run", tint = Color.White)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "RUN BACKTEST SIMULATION",
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp,
+                        color = Color.White
+                    )
                 }
             }
         }
-    }
-
-    // Backtest Progress In-Flight Dialog / Modal
-    if (isBacktesting) {
-        AlertDialog(
-            onDismissRequest = {},
-            title = {
-                Text(
-                    text = "Running Strategy Simulation",
-                    fontWeight = FontWeight.Bold,
-                    color = theme.textPrimary
-                )
-            },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = "Asset: ${selectedAsset.symbol} (${selectedTimeframe.label})\nStrategy: ${selectedStrategy.name}",
-                        fontSize = 13.sp,
-                        color = theme.textSecondary
-                    )
-
-                    LinearProgressIndicator(
-                        modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
-                        color = theme.brandPrimary,
-                        trackColor = theme.surfaceElevated
-                    )
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Text(
-                            text = "Processing historical bars...",
-                            fontSize = 11.sp,
-                            color = theme.textMuted
-                        )
-                        Text(
-                            text = "Simulating",
-                            fontSize = 11.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = theme.brandPrimary
-                        )
-                    }
-                }
-            },
-            confirmButton = {},
-            containerColor = theme.surface,
-            shape = RoundedCornerShape(20.dp)
-        )
     }
 }

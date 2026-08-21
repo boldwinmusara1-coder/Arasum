@@ -613,3 +613,18 @@ private fun LegendPill(label: String, color: Color, isActive: Boolean = true, on
         )
     }
 }
+
+@Composable
+fun CandlestickChart(
+    candles: List<Candle>,
+    timeFrameMinutes: Int,
+    modifier: Modifier = Modifier
+) {
+    CandlestickChart(
+        candles = candles,
+        indicators = CalculatedIndicators(emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList(), emptyList()),
+        signalMarkers = emptyList(),
+        modifier = modifier
+    )
+}
+

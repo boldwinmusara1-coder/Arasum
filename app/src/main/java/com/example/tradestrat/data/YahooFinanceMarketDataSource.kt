@@ -61,9 +61,11 @@ class YahooFinanceMarketDataSource(
             }
             AssetCategory.CRYPTO -> {
                 when (asset.symbol) {
-                    "BTC/USD" -> "BTC-USD"
-                    "ETH/USD" -> "ETH-USD"
-                    "SOL/USD" -> "SOL-USD"
+                    "BTC/USD", "BTC/USDT" -> "BTC-USD"
+                    "ETH/USD", "ETH/USDT" -> "ETH-USD"
+                    "SOL/USD", "SOL/USDT" -> "SOL-USD"
+                    "BNB/USD", "BNB/USDT" -> "BNB-USD"
+                    "XRP/USD", "XRP/USDT" -> "XRP-USD"
                     else -> asset.symbol.replace("/", "-")
                 }
             }

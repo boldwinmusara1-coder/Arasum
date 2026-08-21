@@ -2,7 +2,6 @@ package com.example.tradestrat.ui.screens
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -17,7 +16,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
@@ -37,7 +35,9 @@ fun DashboardScreen(
     viewModel: BacktestViewModel,
     modifier: Modifier = Modifier,
     onNavigateToBacktest: () -> Unit = {},
-    onNavigateToStrategies: () -> Unit = {},
+    onNavigateToReplay: () -> Unit = {},
+    onNavigateToStrategyLab: () -> Unit = {},
+    onNavigateToJournal: () -> Unit = {},
     onNavigateToSmcIct: () -> Unit = {},
     onNavigateToResults: () -> Unit = {}
 ) {
@@ -47,8 +47,8 @@ fun DashboardScreen(
     val selectedStrategy by viewModel.selectedStrategy.collectAsState()
     val currentResult by viewModel.currentResult.collectAsState()
     val isBacktesting by viewModel.isBacktesting.collectAsState()
-    val savedBacktests by viewModel.savedBacktests.collectAsState()
     val dataFetchError by viewModel.dataFetchError.collectAsState()
+    val progress by viewModel.backtestProgress.collectAsState()
 
     val result = currentResult
     val isProfitable = (result?.metrics?.netProfitDollars ?: 0.0) >= 0.0
@@ -58,10 +58,10 @@ fun DashboardScreen(
             .fillMaxSize()
             .background(theme.background)
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(16.dp),
+        verticalArrangement = Arrangement.spacedBy(14.dp),
         contentPadding = PaddingValues(top = 12.dp, bottom = 32.dp)
     ) {
-        // App Header & Branding
+        // App Header
         item {
             Row(
                 modifier = Modifier
@@ -79,18 +79,17 @@ fun DashboardScreen(
                         fontSize = 24.sp
                     )
                     Text(
-                        text = "Quantitative Backtesting & Strategy Studio",
+                        text = "Quantitative Trading Research & Backtesting",
                         style = MaterialTheme.typography.bodySmall,
                         color = theme.textSecondary,
                         fontSize = 12.sp
                     )
                 }
 
-                // Status Indicator
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = if (isBacktesting) theme.brandPrimaryContainer else theme.surfaceElevated,
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
+                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
                 ) {
                     Row(
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp),
@@ -101,362 +100,29 @@ fun DashboardScreen(
                             modifier = Modifier
                                 .size(8.dp)
                                 .background(
-                                    if (isBacktesting) theme.brandPrimary else theme.tradeGreen,
-                                    CircleShape
+                                    if (isBacktesting) theme.brandPrimary else theme.accentGreen,
+                                    shape = CircleShape
                                 )
                         )
                         Text(
                             text = if (isBacktesting) "Testing..." else "Ready",
                             fontSize = 11.sp,
                             fontWeight = FontWeight.SemiBold,
-                            color = if (isBacktesting) theme.brandPrimaryText else theme.textPrimary
+                            color = theme.textPrimary
                         )
                     }
                 }
             }
         }
 
-        // Error message banner if any
-        if (dataFetchError != null) {
-            item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth().testTag("dashboard_error_card"),
-                    shape = RoundedCornerShape(14.dp),
-                    color = theme.tradeRedContainer.copy(alpha = 0.8f),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.tradeRed))
-                ) {
-                    Row(
-                        modifier = Modifier.padding(14.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Icon(Icons.Default.CloudOff, contentDescription = "Error", tint = theme.tradeRedText)
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Market Data Notice",
-                                fontWeight = FontWeight.Bold,
-                                color = theme.tradeRedText,
-                                fontSize = 13.sp
-                            )
-                            Text(
-                                text = "We couldn't load the latest market data. Check your connection and try again.",
-                                color = theme.tradeRedText,
-                                fontSize = 12.sp
-                            )
-                        }
-                        TextButton(
-                            onClick = { viewModel.runBacktest() },
-                            colors = ButtonDefaults.textButtonColors(contentColor = theme.tradeRedText)
-                        ) {
-                            Text("Retry", fontWeight = FontWeight.Bold)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Active Backtest Hero Card
-        item {
-            Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("dashboard_hero_card"),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(containerColor = theme.surface),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    // Strategy & Asset Badge Row
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = theme.brandPrimaryContainer
-                            ) {
-                                Text(
-                                    text = selectedAsset.symbol,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = theme.brandPrimaryText,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                            Surface(
-                                shape = RoundedCornerShape(8.dp),
-                                color = theme.surfaceElevated
-                            ) {
-                                Text(
-                                    text = selectedTimeframe.label,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = theme.textSecondary,
-                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
-                                )
-                            }
-                        }
-
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isProfitable) theme.tradeGreenContainer else theme.tradeRedContainer
-                        ) {
-                            Text(
-                                text = if (result != null) String.format(Locale.US, "%+.2f%% ROI", result.metrics.netProfitPercent) else "NO DATA",
-                                fontSize = 11.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isProfitable) theme.tradeGreenText else theme.tradeRedText,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
-                    }
-
-                    // Main Net P&L Display
-                    Column {
-                        Text(
-                            text = "Net Profit & Loss",
-                            style = MaterialTheme.typography.labelMedium,
-                            color = theme.textSecondary
-                        )
-                        Text(
-                            text = if (result != null) String.format(Locale.US, "%s$%,.2f", if (result.metrics.netProfitDollars >= 0) "+" else "-", kotlin.math.abs(result.metrics.netProfitDollars)) else "$0.00",
-                            style = MaterialTheme.typography.headlineMedium,
-                            fontWeight = FontWeight.Bold,
-                            color = if (isProfitable) theme.tradeGreen else theme.tradeRed,
-                            fontSize = 30.sp
-                        )
-                        Text(
-                            text = "Strategy: ${selectedStrategy.name}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = theme.textMuted,
-                            fontSize = 12.sp
-                        )
-                    }
-
-                    Divider(color = theme.borderSubtle, thickness = 1.dp)
-
-                    // Key Summary Metrics Grid (Win Rate, Profit Factor, Max Drawdown, Total Trades)
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        DashboardMetricItem(
-                            label = "Win Rate",
-                            value = if (result != null) String.format(Locale.US, "%.1f%%", result.metrics.winRatePercent) else "--",
-                            color = theme.textPrimary,
-                            theme = theme
-                        )
-                        DashboardMetricItem(
-                            label = "Profit Factor",
-                            value = if (result != null) {
-                                if (result.metrics.profitFactor.isInfinite()) "∞" else String.format(Locale.US, "%.2f", result.metrics.profitFactor)
-                            } else "--",
-                            color = if ((result?.metrics?.profitFactor ?: 0.0) >= 1.5) theme.tradeGreen else theme.textPrimary,
-                            theme = theme
-                        )
-                        DashboardMetricItem(
-                            label = "Max Drawdown",
-                            value = if (result != null) String.format(Locale.US, "%.1f%%", result.metrics.maxDrawdownPercent) else "--",
-                            color = theme.tradeRed,
-                            theme = theme
-                        )
-                        DashboardMetricItem(
-                            label = "Trades",
-                            value = if (result != null) "${result.trades.size}" else "0",
-                            color = theme.textPrimary,
-                            theme = theme
-                        )
-                    }
-
-                    // Action Buttons Row
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(top = 4.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        Button(
-                            onClick = onNavigateToBacktest,
-                            modifier = Modifier
-                                .weight(1f)
-                                .height(48.dp)
-                                .testTag("dashboard_run_new_backtest_button"),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.buttonColors(
-                                containerColor = theme.brandPrimary,
-                                contentColor = Color.White
-                            )
-                        ) {
-                            Icon(Icons.Default.PlayArrow, contentDescription = "Run", modifier = Modifier.size(20.dp))
-                            Spacer(modifier = Modifier.width(6.dp))
-                            Text("Run New Backtest", fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                        }
-
-                        OutlinedButton(
-                            onClick = onNavigateToResults,
-                            modifier = Modifier
-                                .height(48.dp)
-                                .testTag("dashboard_view_results_button"),
-                            shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = theme.textPrimary),
-                            border = ButtonDefaults.outlinedButtonBorder.copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
-                        ) {
-                            Icon(Icons.Default.Analytics, contentDescription = "Results", modifier = Modifier.size(18.dp))
-                            Spacer(modifier = Modifier.width(4.dp))
-                            Text("Details", fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-                        }
-                    }
-                }
-            }
-        }
-
-        // Quick Launch Hub
-        item {
-            Text(
-                text = "Quick Launch Hub",
-                style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                color = theme.textPrimary,
-                fontSize = 16.sp
-            )
-        }
-
-        item {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(12.dp)
-            ) {
-                QuickHubCard(
-                    title = "Strategy Lab",
-                    subtitle = "Presets & Optimizer",
-                    icon = Icons.Default.Tune,
-                    iconTint = theme.brandPrimary,
-                    containerColor = theme.surface,
-                    modifier = Modifier.weight(1f),
-                    theme = theme,
-                    onClick = onNavigateToStrategies
-                )
-                QuickHubCard(
-                    title = "SMC / ICT Suite",
-                    subtitle = "Order Blocks & FVGs",
-                    icon = Icons.Default.Psychology,
-                    iconTint = theme.tradePurple,
-                    containerColor = theme.surface,
-                    modifier = Modifier.weight(1f),
-                    theme = theme,
-                    onClick = onNavigateToSmcIct
-                )
-            }
-        }
-
-        // Quick Market Switcher
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Quick Instrument Switch",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = theme.textPrimary,
-                        fontSize = 15.sp
-                    )
-                    Text(
-                        text = "Tap to load",
-                        fontSize = 11.sp,
-                        color = theme.textMuted
-                    )
-                }
-
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    contentPadding = PaddingValues(vertical = 2.dp)
-                ) {
-                    items(MarketDataProvider.ASSETS.take(6)) { asset ->
-                        val isSelected = selectedAsset.id == asset.id
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(12.dp))
-                                .clickable { viewModel.setAsset(asset) }
-                                .testTag("dashboard_asset_${asset.symbol.replace('/', '_')}"),
-                            shape = RoundedCornerShape(12.dp),
-                            color = if (isSelected) theme.brandPrimaryContainer else theme.surface,
-                            border = CardDefaults.outlinedCardBorder().copy(
-                                brush = androidx.compose.ui.graphics.SolidColor(if (isSelected) theme.brandPrimary else theme.border)
-                            )
-                        ) {
-                            Column(modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp)) {
-                                Text(
-                                    text = asset.symbol,
-                                    fontSize = 13.sp,
-                                    fontWeight = FontWeight.Bold,
-                                    color = if (isSelected) theme.brandPrimaryText else theme.textPrimary
-                                )
-                                Text(
-                                    text = asset.category.name,
-                                    fontSize = 10.sp,
-                                    color = theme.textSecondary
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Quick Timeframe Switcher (Including 5m, 15m, 30m, 1h, 4h, 1D)
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(
-                    text = "Timeframe Selection",
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = theme.textPrimary,
-                    fontSize = 15.sp
-                )
-
-                LazyRow(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    items(listOf(Timeframe.M5, Timeframe.M15, Timeframe.M30, Timeframe.H1, Timeframe.H4, Timeframe.D1)) { tf ->
-                        val isSelected = selectedTimeframe == tf
-                        Surface(
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { viewModel.setTimeframe(tf) }
-                                .testTag("dashboard_tf_${tf.name.lowercase()}"),
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) theme.brandPrimary else theme.surface,
-                            border = CardDefaults.outlinedCardBorder().copy(
-                                brush = androidx.compose.ui.graphics.SolidColor(if (isSelected) theme.brandPrimary else theme.border)
-                            )
-                        ) {
-                            Text(
-                                text = tf.label,
-                                fontSize = 12.sp,
-                                fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                color = if (isSelected) Color.White else theme.textPrimary,
-                                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp)
-                            )
-                        }
-                    }
-                }
-            }
-        }
-
-        // Portfolio Equity Preview (if result exists)
-        if (result != null && result.equityCurve.isNotEmpty()) {
+        // Real-time Progress Card if running
+        if (isBacktesting && progress.isRunning) {
             item {
                 Card(
                     modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(20.dp),
-                    colors = CardDefaults.cardColors(containerColor = theme.surface),
-                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = theme.surfaceElevated),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.brandPrimary))
                 ) {
                     Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(
@@ -464,87 +130,283 @@ fun DashboardScreen(
                             horizontalArrangement = Arrangement.SpaceBetween,
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                                Icon(Icons.Default.ShowChart, contentDescription = null, tint = theme.brandPrimary, modifier = Modifier.size(18.dp))
-                                Text(
-                                    text = "Equity Trajectory",
-                                    style = MaterialTheme.typography.titleSmall,
-                                    fontWeight = FontWeight.Bold,
-                                    color = theme.textPrimary
-                                )
-                            }
-                            TextButton(onClick = onNavigateToResults) {
-                                Text("Full Analytics", fontSize = 12.sp, color = theme.brandPrimary)
+                            Text("Running Backtest...", fontWeight = FontWeight.Bold, color = theme.textPrimary)
+                            TextButton(onClick = { viewModel.cancelBacktest() }) {
+                                Text("Cancel", color = theme.accentRed, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                             }
                         }
-
-                        EquityCurveChart(
-                            equityCurve = result.equityCurve,
-                            modifier = Modifier.height(200.dp),
-                            initialCapital = viewModel.riskParameters.value.initialCapital
+                        LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = theme.brandPrimary)
+                        Text(
+                            text = "${progress.strategyName} • ${progress.symbol} (${progress.timeframe}) • ${progress.currentDateStr}",
+                            fontSize = 11.sp,
+                            color = theme.textSecondary
                         )
                     }
                 }
             }
         }
 
-        // Recent Saved Backtests Section
-        if (savedBacktests.isNotEmpty()) {
-            item {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(
-                        text = "Recent Saved Backtests",
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.Bold,
-                        color = theme.textPrimary,
-                        fontSize = 15.sp
+        // Primary Action Buttons (2x2 Grid)
+        item {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    ActionBigCard(
+                        title = "RUN BACKTEST",
+                        subtitle = "Configure & execute",
+                        icon = Icons.Default.PlayArrow,
+                        accentColor = theme.brandPrimary,
+                        onClick = onNavigateToBacktest,
+                        modifier = Modifier.weight(1f),
+                        theme = theme
                     )
 
-                    savedBacktests.take(3).forEach { saved ->
-                        val winRateVal = saved.winRatePercent
-                        Surface(
+                    ActionBigCard(
+                        title = "REPLAY",
+                        subtitle = "Historical bar replay",
+                        icon = Icons.Default.FastForward,
+                        accentColor = theme.brandSecondary,
+                        onClick = onNavigateToReplay,
+                        modifier = Modifier.weight(1f),
+                        theme = theme
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    ActionBigCard(
+                        title = "STRATEGY LAB",
+                        subtitle = "Multi-strategy test",
+                        icon = Icons.Default.Science,
+                        accentColor = Color(0xFFA855F7),
+                        onClick = onNavigateToStrategyLab,
+                        modifier = Modifier.weight(1f),
+                        theme = theme
+                    )
+
+                    ActionBigCard(
+                        title = "TRADE JOURNAL",
+                        subtitle = "Notes & thesis",
+                        icon = Icons.Default.BookmarkBorder,
+                        accentColor = Color(0xFFF59E0B),
+                        onClick = onNavigateToJournal,
+                        modifier = Modifier.weight(1f),
+                        theme = theme
+                    )
+                }
+            }
+        }
+
+        // Error Banner if present
+        if (dataFetchError != null) {
+            item {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(12.dp),
+                    color = theme.accentRed.copy(alpha = 0.12f),
+                    border = androidx.compose.foundation.BorderStroke(1.dp, theme.accentRed.copy(alpha = 0.4f))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Warning, contentDescription = "Error", tint = theme.accentRed)
+                        Text(text = dataFetchError ?: "", color = theme.accentRed, fontSize = 12.sp)
+                    }
+                }
+            }
+        }
+
+        // LAST BACKTEST CARD
+        item {
+            if (result != null) {
+                Card(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { onNavigateToResults() }
+                        .testTag("dashboard_last_backtest_card"),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = theme.surface),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        // Card Header: Strategy & Timeframe Info
+                        Row(
                             modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(12.dp),
-                            color = theme.surface,
-                            border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(12.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically
-                            ) {
-                                Column {
+                            Column {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                ) {
                                     Text(
-                                        text = "${saved.assetSymbol} • ${saved.strategyName}",
+                                        text = "LAST BACKTEST",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = theme.brandPrimary,
                                         fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = theme.textPrimary
+                                        letterSpacing = 1.sp
                                     )
-                                    Text(
-                                        text = "${saved.timeframe} • ${saved.totalTrades} Trades",
-                                        fontSize = 11.sp,
-                                        color = theme.textSecondary
-                                    )
+                                    Surface(
+                                        shape = RoundedCornerShape(4.dp),
+                                        color = theme.brandPrimary.copy(alpha = 0.15f)
+                                    ) {
+                                        Text(
+                                            text = result.strategy.strategyType.name,
+                                            fontSize = 9.sp,
+                                            fontWeight = FontWeight.Bold,
+                                            color = theme.brandPrimary,
+                                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                        )
+                                    }
                                 }
 
-                                Column(horizontalAlignment = Alignment.End) {
-                                    Text(
-                                        text = String.format(Locale.US, "%s%.2f%%", if (saved.netProfitPercent >= 0) "+" else "-", kotlin.math.abs(saved.netProfitPercent)),
-                                        fontWeight = FontWeight.Bold,
-                                        fontSize = 13.sp,
-                                        color = if (saved.netProfitPercent >= 0) theme.tradeGreen else theme.tradeRed
-                                    )
-                                    Text(
-                                        text = String.format(Locale.US, "%.1f%% Win", winRateVal),
-                                        fontSize = 11.sp,
-                                        color = theme.textSecondary
-                                    )
-                                }
+                                Spacer(modifier = Modifier.height(2.dp))
+                                Text(
+                                    text = "${result.strategy.name} • ${result.asset.symbol} (${result.timeframe.label})",
+                                    style = MaterialTheme.typography.titleMedium,
+                                    fontWeight = FontWeight.Bold,
+                                    color = theme.textPrimary
+                                )
+                                Text(
+                                    text = "${result.dataSource.startDate} → ${result.dataSource.endDate}",
+                                    fontSize = 11.sp,
+                                    color = theme.textMuted
+                                )
+                            }
+
+                            Icon(
+                                imageVector = Icons.Default.ChevronRight,
+                                contentDescription = "View Details",
+                                tint = theme.textMuted
+                            )
+                        }
+
+                        HorizontalDivider(color = theme.borderSubtle, thickness = 1.dp)
+
+                        // Primary Performance Row: Net PnL & ROI
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Column {
+                                Text("NET P&L (USD)", fontSize = 10.sp, color = theme.textMuted, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = String.format(Locale.US, "%+.2f", result.metrics.netProfitDollars),
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isProfitable) theme.accentGreen else theme.accentRed
+                                )
+                            }
+
+                            Column(horizontalAlignment = Alignment.End) {
+                                Text("ROI / RETURN", fontSize = 10.sp, color = theme.textMuted, fontWeight = FontWeight.SemiBold)
+                                Text(
+                                    text = String.format(Locale.US, "%+.2f%%", result.metrics.netProfitPercent),
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = if (isProfitable) theme.accentGreen else theme.accentRed
+                                )
                             }
                         }
+
+                        // Secondary Performance Grid
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            MiniStat("Win Rate", String.format(Locale.US, "%.1f%%", result.metrics.winRatePercent), theme)
+                            MiniStat("Profit Factor", String.format(Locale.US, "%.2f", result.metrics.profitFactor), theme)
+                            MiniStat("Max DD", String.format(Locale.US, "%.1f%%", result.metrics.maxDrawdownPercent), theme)
+                            MiniStat("Trades", result.metrics.totalTrades.toString(), theme)
+                        }
+
+                        // Quick Sparkline of Equity Curve
+                        if (result.equityCurve.isNotEmpty()) {
+                            EquityCurveChart(
+                                equityCurve = result.equityCurve,
+                                initialCapital = result.metrics.initialCapital,
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .height(110.dp)
+                            )
+                        }
+
+                        Button(
+                            onClick = onNavigateToResults,
+                            modifier = Modifier.fillMaxWidth(),
+                            shape = RoundedCornerShape(12.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = theme.surfaceElevated)
+                        ) {
+                            Text("Open Full Results Dashboard", color = theme.brandPrimary, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
                     }
+                }
+            } else {
+                Card(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(20.dp),
+                    colors = CardDefaults.cardColors(containerColor = theme.surface),
+                    border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
+                ) {
+                    Column(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(24.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        Icon(imageVector = Icons.Default.Analytics, contentDescription = "Ready", tint = theme.brandPrimary, modifier = Modifier.size(36.dp))
+                        Text("No Backtest Executed Yet", fontWeight = FontWeight.Bold, color = theme.textPrimary)
+                        Button(
+                            onClick = { viewModel.runBacktest() },
+                            colors = ButtonDefaults.buttonColors(containerColor = theme.brandPrimary),
+                            shape = RoundedCornerShape(12.dp)
+                        ) {
+                            Text("Run Default Backtest", fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
+        }
+
+        // Quick Market Switcher Row
+        item {
+            Text(
+                text = "POPULAR MARKETS",
+                style = MaterialTheme.typography.labelSmall,
+                color = theme.textMuted,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 1.sp
+            )
+        }
+
+        item {
+            LazyRow(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                items(MarketDataProvider.ASSETS.take(6)) { asset ->
+                    val isSelected = asset.symbol == selectedAsset.symbol
+                    FilterChip(
+                        selected = isSelected,
+                        onClick = { viewModel.setAsset(asset) },
+                        label = { Text(asset.symbol, fontSize = 12.sp, fontWeight = FontWeight.SemiBold) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = theme.brandPrimary.copy(alpha = 0.2f),
+                            selectedLabelColor = theme.brandPrimary
+                        )
+                    )
                 }
             }
         }
@@ -552,63 +414,65 @@ fun DashboardScreen(
 }
 
 @Composable
-private fun DashboardMetricItem(
-    label: String,
-    value: String,
-    color: Color,
-    theme: com.example.ui.theme.AppThemeColors
+private fun ActionBigCard(
+    title: String,
+    subtitle: String,
+    icon: ImageVector,
+    accentColor: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    theme: com.example.ui.theme.AppColors
 ) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(
-            text = label,
-            fontSize = 11.sp,
-            color = theme.textSecondary
-        )
-        Spacer(modifier = Modifier.height(2.dp))
-        Text(
-            text = value,
-            fontSize = 14.sp,
-            fontWeight = FontWeight.Bold,
-            color = color
-        )
+    Surface(
+        modifier = modifier
+            .clickable { onClick() }
+            .height(80.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = theme.surface,
+        border = androidx.compose.foundation.BorderStroke(1.dp, theme.borderSubtle)
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Surface(
+                shape = CircleShape,
+                color = accentColor.copy(alpha = 0.18f),
+                modifier = Modifier.size(38.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(imageVector = icon, contentDescription = title, tint = accentColor, modifier = Modifier.size(20.dp))
+                }
+            }
+
+            Column(verticalArrangement = Arrangement.Center) {
+                Text(
+                    text = title,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 12.sp,
+                    color = theme.textPrimary
+                )
+                Text(
+                    text = subtitle,
+                    fontSize = 10.sp,
+                    color = theme.textSecondary
+                )
+            }
+        }
     }
 }
 
 @Composable
-private fun QuickHubCard(
-    title: String,
-    subtitle: String,
-    icon: ImageVector,
-    iconTint: Color,
-    containerColor: Color,
-    modifier: Modifier = Modifier,
-    theme: com.example.ui.theme.AppThemeColors,
-    onClick: () -> Unit
+private fun MiniStat(
+    label: String,
+    value: String,
+    theme: com.example.ui.theme.AppColors
 ) {
-    Surface(
-        modifier = modifier
-            .clip(RoundedCornerShape(16.dp))
-            .clickable { onClick() },
-        shape = RoundedCornerShape(16.dp),
-        color = containerColor,
-        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
-    ) {
-        Column(
-            modifier = Modifier.padding(14.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .background(iconTint.copy(alpha = 0.15f), CircleShape),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(imageVector = icon, contentDescription = title, tint = iconTint, modifier = Modifier.size(20.dp))
-            }
-            Column {
-                Text(text = title, fontWeight = FontWeight.Bold, fontSize = 14.sp, color = theme.textPrimary)
-                Text(text = subtitle, fontSize = 11.sp, color = theme.textSecondary)
-            }
-        }
+    Column {
+        Text(text = label, fontSize = 9.sp, color = theme.textMuted, fontWeight = FontWeight.SemiBold)
+        Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = theme.textPrimary)
     }
 }

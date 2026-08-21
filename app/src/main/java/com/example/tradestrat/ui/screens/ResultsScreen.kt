@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,7 +24,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.tradestrat.model.*
 import com.example.tradestrat.ui.BacktestViewModel
-import com.example.tradestrat.ui.components.EquityCurveChart
+import com.example.tradestrat.ui.components.*
 import com.example.ui.theme.LocalAppTheme
 import java.util.Locale
 
@@ -37,9 +38,12 @@ fun ResultsScreen(
     val theme = LocalAppTheme.current
     val currentResult by viewModel.currentResult.collectAsState()
     val isBacktesting by viewModel.isBacktesting.collectAsState()
+    val sessionAnalytics by viewModel.sessionAnalytics.collectAsState()
+    val maeMfeDistribution by viewModel.maeMfeDistribution.collectAsState()
+    val selectedTradeForDetail by viewModel.selectedTradeForDetail.collectAsState()
 
-    var selectedTradeFilter by remember { mutableStateOf(0) } // 0: All, 1: Wins, 2: Losses
-    var showSaveSnackbar by remember { mutableStateOf(false) }
+    var selectedTradeFilter by remember { mutableStateOf(0) } // 0: All, 1: Wins, 2: Losses, 3: Longs, 4: Shorts
+    var showUnderwaterDrawdown by remember { mutableStateOf(false) }
 
     val result = currentResult
 
@@ -100,8 +104,23 @@ fun ResultsScreen(
         when (selectedTradeFilter) {
             1 -> result.trades.filter { it.isWin }
             2 -> result.trades.filter { !it.isWin }
+            3 -> result.trades.filter { it.direction == TradeDirection.LONG }
+            4 -> result.trades.filter { it.direction == TradeDirection.SHORT }
             else -> result.trades
         }
+    }
+
+    // Trade Detail Sheet
+    if (selectedTradeForDetail != null) {
+        TradeDetailSheet(
+            trade = selectedTradeForDetail!!,
+            strategy = result.strategy,
+            asset = result.asset,
+            onAddToJournal = { notes, tags ->
+                viewModel.createJournalEntryFromTrade(selectedTradeForDetail!!, notes, tags)
+            },
+            onDismiss = { viewModel.selectTradeForDetail(null) }
+        )
     }
 
     LazyColumn(
@@ -109,350 +128,392 @@ fun ResultsScreen(
             .fillMaxSize()
             .background(theme.background)
             .padding(horizontal = 16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
         contentPadding = PaddingValues(top = 12.dp, bottom = 96.dp)
     ) {
-        // Header
+        // TOP: Strategy, Market, Timeframe, Date Range
         item {
-            Column(modifier = Modifier.padding(top = 4.dp)) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = theme.surface),
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Surface(
+                                shape = RoundedCornerShape(4.dp),
+                                color = theme.brandPrimary.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = result.strategy.strategyType.name,
+                                    fontSize = 9.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    color = theme.brandPrimary,
+                                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                )
+                            }
+                            Text(
+                                text = result.strategy.name,
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = theme.textPrimary
+                            )
+                        }
+
+                        IconButton(onClick = { viewModel.saveCurrentBacktest() }) {
+                            Icon(imageVector = Icons.Default.BookmarkAdd, contentDescription = "Save", tint = theme.brandPrimary)
+                        }
+                    }
+
+                    Text(
+                        text = "${result.asset.symbol} • ${result.timeframe.label} • ${result.dataSource.startDate} → ${result.dataSource.endDate}",
+                        fontSize = 11.sp,
+                        color = theme.textSecondary
+                    )
+                }
+            }
+        }
+
+        // PRIMARY METRICS: Net P&L & ROI
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = theme.surface),
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
+            ) {
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(16.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     Column {
+                        Text("NET P&L (USD)", fontSize = 10.sp, color = theme.textMuted, fontWeight = FontWeight.SemiBold)
                         Text(
-                            text = "Backtest Analytics",
-                            style = MaterialTheme.typography.headlineSmall,
+                            text = String.format(Locale.US, "%+.2f", metrics.netProfitDollars),
+                            fontSize = 24.sp,
                             fontWeight = FontWeight.Bold,
-                            color = theme.textPrimary,
-                            fontSize = 24.sp
+                            color = if (isProfitable) theme.accentGreen else theme.accentRed
                         )
                         Text(
-                            text = "${result.asset.symbol} • ${result.timeframe.label} • ${result.strategy.name}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = theme.textSecondary,
-                            fontSize = 12.sp
+                            text = "Initial: $${metrics.initialCapital.toInt()} → Final: $${metrics.finalEquity.toInt()}",
+                            fontSize = 10.sp,
+                            color = theme.textSecondary
                         )
                     }
 
-                    Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        FilledTonalIconButton(
-                            onClick = {
-                                viewModel.saveCurrentBacktest()
-                                showSaveSnackbar = true
-                            },
-                            colors = IconButtonDefaults.filledTonalIconButtonColors(
-                                containerColor = theme.surfaceElevated,
-                                contentColor = theme.brandPrimary
-                            ),
-                            modifier = Modifier.testTag("save_backtest_result_btn")
-                        ) {
-                            Icon(Icons.Default.BookmarkBorder, contentDescription = "Save to History")
-                        }
+                    Column(horizontalAlignment = Alignment.End) {
+                        Text("RETURN ON INVESTMENT", fontSize = 10.sp, color = theme.textMuted, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = String.format(Locale.US, "%+.2f%%", metrics.netProfitPercent),
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = if (isProfitable) theme.accentGreen else theme.accentRed
+                        )
+                        Text(
+                            text = "Benchmark: ${String.format(Locale.US, "%+.1f%%", metrics.benchmarkReturnPercent)}",
+                            fontSize = 10.sp,
+                            color = theme.textSecondary
+                        )
                     }
                 }
             }
         }
 
-        // Hero Performance Card
+        // SECONDARY METRICS: Win Rate, Profit Factor, Expectancy, Max Drawdown, Trades, Avg R
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetricBox("Win Rate", String.format(Locale.US, "%.1f%%", metrics.winRatePercent), "${metrics.winningTrades}W / ${metrics.losingTrades}L", Modifier.weight(1f), theme)
+                MetricBox("Profit Factor", String.format(Locale.US, "%.2f", metrics.profitFactor), "Payoff: ${String.format(Locale.US, "%.2f", metrics.payoffRatio)}", Modifier.weight(1f), theme)
+                MetricBox("Max Drawdown", String.format(Locale.US, "%.1f%%", metrics.maxDrawdownPercent), "${metrics.maxDrawdownDurationBars} bars", Modifier.weight(1f), theme, valueColor = theme.accentRed)
+            }
+        }
+
+        item {
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                MetricBox("Expectancy", String.format(Locale.US, "$%.2f", metrics.expectancyDollars), "${String.format(Locale.US, "%+.2f R", metrics.expectancyR)}", Modifier.weight(1f), theme)
+                MetricBox("Total Trades", metrics.totalTrades.toString(), "Avg Hold: ${metrics.avgHoldingBars.toInt()}b", Modifier.weight(1f), theme)
+                MetricBox("Average R", String.format(Locale.US, "%+.2f R", metrics.avgRMultiple), "Fees: $${metrics.totalFeesPaid.toInt()}", Modifier.weight(1f), theme)
+            }
+        }
+
+        // ADDITIONAL INSTITUTIONAL METRICS: Sharpe, Sortino, CAGR, Calmar, Alpha
         item {
             Card(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .testTag("results_hero_card"),
-                shape = RoundedCornerShape(20.dp),
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(16.dp),
                 colors = CardDefaults.cardColors(containerColor = theme.surface),
-                border = CardDefaults.outlinedCardBorder().copy(
-                    brush = androidx.compose.ui.graphics.SolidColor(
-                        if (isProfitable) theme.tradeGreen.copy(alpha = 0.5f) else theme.tradeRed.copy(alpha = 0.5f)
-                    )
-                )
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
             ) {
-                Column(
-                    modifier = Modifier.padding(18.dp),
-                    verticalArrangement = Arrangement.spacedBy(14.dp)
-                ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text(
+                        text = "INSTITUTIONAL RISK-ADJUSTED METRICS",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = theme.brandPrimary,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.sp
+                    )
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        InstMetric("Sharpe", String.format(Locale.US, "%.2f", metrics.sharpeRatio), theme)
+                        InstMetric("Sortino", String.format(Locale.US, "%.2f", metrics.sortinoRatio), theme)
+                        InstMetric("CAGR", String.format(Locale.US, "%.1f%%", metrics.cagrPercent), theme)
+                        InstMetric("Calmar", String.format(Locale.US, "%.2f", metrics.calmarRatio), theme)
+                        InstMetric("Alpha", String.format(Locale.US, "%+.1f%%", metrics.alphaPercent), theme)
+                    }
+                }
+            }
+        }
+
+        // CANVAS EQUITY CURVE
+        item {
+            EquityCurveChart(
+                equityCurve = result.equityCurve,
+                initialCapital = metrics.initialCapital,
+                modifier = Modifier.fillMaxWidth()
+            )
+        }
+
+        // PERFORMANCE BREAKDOWN (Long vs Short & Global Sessions)
+        item {
+            PerformanceBreakdownCard(
+                trades = result.trades,
+                metrics = metrics,
+                sessionAnalytics = sessionAnalytics
+            )
+        }
+
+        // EXCURSION ANALYTICS (MAE & MFE)
+        maeMfeDistribution?.let { dist ->
+            item {
+                MaeMfeCard(distribution = dist)
+            }
+        }
+
+        // TEMPORAL EDGE HEATMAP
+        item {
+            TradingHeatmapsCard(trades = result.trades)
+        }
+
+        // DATA MANAGEMENT SUMMARY CARD
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = theme.surface),
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Icon(imageVector = Icons.Default.Storage, contentDescription = "Data", tint = theme.brandPrimary, modifier = Modifier.size(18.dp))
+                            Text(
+                                text = "Data Source & Integrity",
+                                style = MaterialTheme.typography.titleMedium,
+                                fontWeight = FontWeight.Bold,
+                                color = theme.textPrimary
+                            )
+                        }
+
+                        Surface(
+                            shape = RoundedCornerShape(4.dp),
+                            color = theme.accentGreen.copy(alpha = 0.15f)
+                        ) {
+                            Text(
+                                text = "LOCAL CACHE & REMOTE SYNC",
+                                fontSize = 9.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = theme.accentGreen,
+                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column {
+                            Text("PROVIDER", fontSize = 9.sp, color = theme.textMuted, fontWeight = FontWeight.SemiBold)
+                            Text(result.dataSource.provider, fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.textPrimary)
+                        }
+                        Column {
+                            Text("CANDLES", fontSize = 9.sp, color = theme.textMuted, fontWeight = FontWeight.SemiBold)
+                            Text("${result.dataSource.candleCount} bars", fontSize = 12.sp, fontWeight = FontWeight.Bold, color = theme.textPrimary)
+                        }
+                        Column {
+                            Text("EXECUTION", fontSize = 9.sp, color = theme.textMuted, fontWeight = FontWeight.SemiBold)
+                            Text(result.riskParams.intrabarExecution.label, fontSize = 11.sp, color = theme.textSecondary)
+                        }
+                    }
+
+                    Button(
+                        onClick = { viewModel.runBacktest() },
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(10.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = theme.surfaceElevated)
+                    ) {
+                        Icon(imageVector = Icons.Default.Refresh, contentDescription = "Refresh", tint = theme.brandPrimary, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Refresh & Re-validate Dataset", fontSize = 12.sp, color = theme.brandPrimary, fontWeight = FontWeight.Bold)
+                    }
+                }
+            }
+        }
+
+        // TRADE EXECUTION LOG (Click to inspect trade detail)
+        item {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(18.dp),
+                colors = CardDefaults.cardColors(containerColor = theme.surface),
+                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.borderSubtle))
+            ) {
+                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "NET PERFORMANCE",
-                            style = MaterialTheme.typography.labelSmall,
+                            text = "Trade Execution Log (${filteredTrades.size})",
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.Bold,
-                            color = theme.textMuted,
-                            letterSpacing = 1.sp
+                            color = theme.textPrimary
                         )
-
-                        Surface(
-                            shape = CircleShape,
-                            color = if (isProfitable) theme.tradeGreenContainer else theme.tradeRedContainer
-                        ) {
-                            Text(
-                                text = String.format(Locale.US, "%+.2f%% ROI", metrics.netProfitPercent),
-                                fontSize = 12.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isProfitable) theme.tradeGreenText else theme.tradeRedText,
-                                modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
-                            )
-                        }
+                        Text("Tap trade to inspect", fontSize = 11.sp, color = theme.textMuted)
                     }
 
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween,
-                        verticalAlignment = Alignment.Bottom
-                    ) {
-                        Column {
-                            Text(
-                                text = String.format(Locale.US, "%s$%,.2f", if (metrics.netProfitDollars >= 0) "+" else "-", kotlin.math.abs(metrics.netProfitDollars)),
-                                fontSize = 32.sp,
-                                fontWeight = FontWeight.Bold,
-                                color = if (isProfitable) theme.tradeGreen else theme.tradeRed
-                            )
-                            Text(
-                                text = "Final Equity: $${String.format(Locale.US, "%,.2f", metrics.finalEquity)} (from $${String.format(Locale.US, "%,.0f", metrics.initialCapital)})",
-                                fontSize = 12.sp,
-                                color = theme.textSecondary
-                            )
-                        }
-                    }
-
-                    Divider(color = theme.borderSubtle)
-
-                    // 4 Quick Stats
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        QuickStatItem("Win Rate", String.format(Locale.US, "%.1f%%", metrics.winRatePercent), theme.textPrimary, theme)
-                        QuickStatItem("Profit Factor", if (metrics.profitFactor.isInfinite()) "∞" else String.format(Locale.US, "%.2f", metrics.profitFactor), if (metrics.profitFactor >= 1.4) theme.tradeGreen else theme.textPrimary, theme)
-                        QuickStatItem("Max DD", String.format(Locale.US, "%.1f%%", metrics.maxDrawdownPercent), theme.tradeRed, theme)
-                        QuickStatItem("Sharpe", String.format(Locale.US, "%.2f", metrics.sharpeRatio), if (metrics.sharpeRatio >= 1.0) theme.brandPrimary else theme.textPrimary, theme)
-                    }
-                }
-            }
-        }
-
-        // Equity Curve Chart Card
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = theme.surface),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
-            ) {
-                Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text(
-                        text = "Equity Growth & Benchmark Trajectory",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 14.sp,
-                        color = theme.textPrimary
-                    )
-
-                    EquityCurveChart(
-                        equityCurve = result.equityCurve,
-                        initialCapital = metrics.initialCapital
-                    )
-                }
-            }
-        }
-
-        // Comprehensive Metrics Breakdown
-        item {
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(18.dp),
-                colors = CardDefaults.cardColors(containerColor = theme.surface),
-                border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
-            ) {
-                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text(
-                        text = "Risk & Return Analytics",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp,
-                        color = theme.textPrimary
-                    )
-
-                    MetricRow("Benchmark Buy & Hold ROI", String.format(Locale.US, "%+.2f%%", metrics.benchmarkReturnPercent), theme.textPrimary, theme)
-                    MetricRow("Strategy Alpha", String.format(Locale.US, "%+.2f%%", metrics.alphaPercent), if (metrics.alphaPercent >= 0) theme.tradeGreen else theme.tradeRed, theme)
-                    MetricRow("CAGR (Annualized Return)", String.format(Locale.US, "%+.2f%%", metrics.cagrPercent), theme.textPrimary, theme)
-                    Divider(color = theme.borderSubtle)
-                    MetricRow("Sortino Ratio", String.format(Locale.US, "%.2f", metrics.sortinoRatio), theme.textPrimary, theme)
-                    MetricRow("Calmar Ratio", String.format(Locale.US, "%.2f", metrics.calmarRatio), theme.textPrimary, theme)
-                    MetricRow("Payoff Ratio (Avg Win / Avg Loss)", String.format(Locale.US, "%.2f", metrics.payoffRatio), theme.textPrimary, theme)
-                    Divider(color = theme.borderSubtle)
-                    MetricRow("Total Executed Trades", "${metrics.totalTrades}", theme.textPrimary, theme)
-                    MetricRow("Winning Trades", "${metrics.winningTrades} (${String.format(Locale.US, "%.1f%%", metrics.winRatePercent)})", theme.tradeGreen, theme)
-                    MetricRow("Losing Trades", "${metrics.losingTrades}", theme.tradeRed, theme)
-                    MetricRow("Avg Win / Trade", String.format(Locale.US, "%+.2f%%", metrics.avgWinningTradePercent), theme.tradeGreen, theme)
-                    MetricRow("Avg Loss / Trade", String.format(Locale.US, "%.2f%%", metrics.avgLosingTradePercent), theme.tradeRed, theme)
-                }
-            }
-        }
-
-        // Trade Log Section Header & Filter Tabs
-        item {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "Trade Execution Journal (${filteredTrades.size})",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 16.sp,
-                        color = theme.textPrimary
-                    )
-                }
-
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    listOf("All (${result.trades.size})", "Wins (${metrics.winningTrades})", "Losses (${metrics.losingTrades})").forEachIndexed { index, label ->
-                        val isSelected = selectedTradeFilter == index
-                        Surface(
-                            modifier = Modifier
-                                .weight(1f)
-                                .clip(RoundedCornerShape(10.dp))
-                                .clickable { selectedTradeFilter = index }
-                                .testTag("trade_filter_$index"),
-                            shape = RoundedCornerShape(10.dp),
-                            color = if (isSelected) theme.brandPrimary else theme.surfaceElevated
-                        ) {
-                            Box(modifier = Modifier.padding(vertical = 8.dp), contentAlignment = Alignment.Center) {
-                                Text(
-                                    text = label,
-                                    fontSize = 12.sp,
-                                    fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Medium,
-                                    color = if (isSelected) Color.White else theme.textSecondary
+                    // Filter row
+                    LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        val filters = listOf("All", "Wins", "Losses", "Longs", "Shorts")
+                        items(filters.size) { idx ->
+                            FilterChip(
+                                selected = selectedTradeFilter == idx,
+                                onClick = { selectedTradeFilter = idx },
+                                label = { Text(filters[idx], fontSize = 11.sp) },
+                                colors = FilterChipDefaults.filterChipColors(
+                                    selectedContainerColor = theme.brandPrimary.copy(alpha = 0.2f),
+                                    selectedLabelColor = theme.brandPrimary
                                 )
+                            )
+                        }
+                    }
+
+                    // Trades
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        filteredTrades.take(50).forEachIndexed { idx, trade ->
+                            Surface(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable { viewModel.selectTradeForDetail(trade) },
+                                shape = RoundedCornerShape(10.dp),
+                                color = theme.surfaceElevated,
+                                border = androidx.compose.foundation.BorderStroke(1.dp, theme.borderSubtle)
+                            ) {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(10.dp),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        Text("#${idx + 1}", fontSize = 11.sp, color = theme.textMuted, fontWeight = FontWeight.Bold)
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = if (trade.direction == TradeDirection.LONG) theme.accentGreen.copy(alpha = 0.15f) else theme.accentRed.copy(alpha = 0.15f)
+                                        ) {
+                                            Text(
+                                                text = trade.direction.name,
+                                                color = if (trade.direction == TradeDirection.LONG) theme.accentGreen else theme.accentRed,
+                                                fontWeight = FontWeight.Bold,
+                                                fontSize = 10.sp,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 2.dp)
+                                            )
+                                        }
+
+                                        Column {
+                                            Text(
+                                                text = trade.entryReason ?: trade.exitReason.label,
+                                                fontSize = 11.sp,
+                                                fontWeight = FontWeight.SemiBold,
+                                                color = theme.textPrimary
+                                            )
+                                            Text(
+                                                text = "Entry: $${String.format(Locale.US, "%.4f", trade.entryPrice)} → $${String.format(Locale.US, "%.4f", trade.exitPrice)}",
+                                                fontSize = 10.sp,
+                                                color = theme.textSecondary
+                                            )
+                                        }
+                                    }
+
+                                    Column(horizontalAlignment = Alignment.End) {
+                                        Text(
+                                            text = String.format(Locale.US, "%+.2f%%", trade.pnlPercent),
+                                            fontWeight = FontWeight.Bold,
+                                            fontSize = 13.sp,
+                                            color = if (trade.isWin) theme.accentGreen else theme.accentRed
+                                        )
+                                        Text(
+                                            text = String.format(Locale.US, "%+.2f R", trade.rMultiple),
+                                            fontSize = 10.sp,
+                                            color = if (trade.isWin) theme.accentGreen else theme.accentRed
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
         }
-
-        // Individual Trades List
-        if (filteredTrades.isEmpty()) {
-            item {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = theme.surfaceElevated
-                ) {
-                    Box(modifier = Modifier.padding(24.dp), contentAlignment = Alignment.Center) {
-                        Text("No trades matching this filter", color = theme.textMuted, fontSize = 13.sp)
-                    }
-                }
-            }
-        } else {
-            items(filteredTrades) { trade ->
-                TradeItemCard(trade = trade, theme = theme)
-            }
-        }
     }
 }
 
 @Composable
-private fun QuickStatItem(
+private fun MetricBox(
     label: String,
     value: String,
-    valueColor: Color,
-    theme: com.example.ui.theme.AppThemeColors
+    subValue: String,
+    modifier: Modifier = Modifier,
+    theme: com.example.ui.theme.AppColors,
+    valueColor: Color = theme.textPrimary
 ) {
-    Column {
-        Text(text = label, fontSize = 11.sp, color = theme.textMuted)
-        Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = valueColor)
-    }
-}
-
-@Composable
-private fun MetricRow(
-    label: String,
-    value: String,
-    valueColor: Color,
-    theme: com.example.ui.theme.AppThemeColors
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween,
-        verticalAlignment = Alignment.CenterVertically
-    ) {
-        Text(text = label, fontSize = 13.sp, color = theme.textSecondary)
-        Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = valueColor)
-    }
-}
-
-@Composable
-private fun TradeItemCard(
-    trade: Trade,
-    theme: com.example.ui.theme.AppThemeColors
-) {
-    val isWin = trade.isWin
     Surface(
-        modifier = Modifier.fillMaxWidth(),
+        modifier = modifier,
         shape = RoundedCornerShape(12.dp),
         color = theme.surface,
-        border = CardDefaults.outlinedCardBorder().copy(brush = androidx.compose.ui.graphics.SolidColor(theme.border))
+        border = androidx.compose.foundation.BorderStroke(1.dp, theme.borderSubtle)
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Surface(
-                        shape = RoundedCornerShape(6.dp),
-                        color = if (trade.direction == TradeDirection.LONG) theme.tradeGreenContainer else theme.tradeRedContainer
-                    ) {
-                        Text(
-                            text = trade.direction.name,
-                            fontSize = 10.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = if (trade.direction == TradeDirection.LONG) theme.tradeGreenText else theme.tradeRedText,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
-                        )
-                    }
-
-                    Text(
-                        text = "#${trade.id.takeLast(4)}",
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 12.sp,
-                        color = theme.textPrimary
-                    )
-                }
-
-                Text(
-                    text = String.format(Locale.US, "%s$%,.2f (%+.2f%%)", if (trade.pnlDollars >= 0) "+" else "-", kotlin.math.abs(trade.pnlDollars), trade.pnlPercent),
-                    fontWeight = FontWeight.Bold,
-                    fontSize = 13.sp,
-                    color = if (isWin) theme.tradeGreen else theme.tradeRed
-                )
-            }
-
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Text(
-                    text = "Entry: $${String.format(Locale.US, "%,.2f", trade.entryPrice)} → Exit: $${String.format(Locale.US, "%,.2f", trade.exitPrice)}",
-                    fontSize = 11.sp,
-                    color = theme.textSecondary
-                )
-                Text(
-                    text = trade.exitReason.name.replace("_", " "),
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = theme.textMuted
-                )
-            }
+        Column(
+            modifier = Modifier.padding(10.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
+        ) {
+            Text(text = label, fontSize = 9.sp, color = theme.textMuted, fontWeight = FontWeight.SemiBold)
+            Text(text = value, fontSize = 14.sp, fontWeight = FontWeight.Bold, color = valueColor)
+            Text(text = subValue, fontSize = 9.sp, color = theme.textSecondary)
         }
+    }
+}
+
+@Composable
+private fun InstMetric(
+    label: String,
+    value: String,
+    theme: com.example.ui.theme.AppColors
+) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Text(text = label, fontSize = 9.sp, color = theme.textMuted, fontWeight = FontWeight.SemiBold)
+        Text(text = value, fontSize = 13.sp, fontWeight = FontWeight.Bold, color = theme.textPrimary)
     }
 }

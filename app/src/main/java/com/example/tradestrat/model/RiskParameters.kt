@@ -68,4 +68,10 @@ data class RiskParameters(
     val maxDrawdownCircuitBreakerPct: Double = 30.0, // Pause trading if drawdown > 30%
     val executionModel: ExecutionModel = ExecutionModel.REALISTIC, // Default is REALISTIC (No look-ahead bias)
     val intrabarExecution: IntrabarExecutionAssumption = IntrabarExecutionAssumption.PESSIMISTIC_STOP_FIRST
-)
+) {
+    val riskPerTradePercent: Double get() = positionSizeValue
+    val slippagePercent: Double get() = slippageBps / 10000.0
+    val commissionPercent: Double get() = commissionBps / 10000.0
+    val stopLossAtrMultiplier: Double get() = stopLossValue
+    val takeProfitRMultiple: Double get() = takeProfitValue
+}

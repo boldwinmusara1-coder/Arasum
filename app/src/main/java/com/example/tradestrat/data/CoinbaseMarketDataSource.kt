@@ -41,9 +41,11 @@ class CoinbaseMarketDataSource(
 
     private fun mapProductId(asset: MarketAsset): String {
         return when (asset.symbol) {
-            "BTC/USD" -> "BTC-USD"
-            "ETH/USD" -> "ETH-USD"
-            "SOL/USD" -> "SOL-USD"
+            "BTC/USD", "BTC/USDT" -> "BTC-USD"
+            "ETH/USD", "ETH/USDT" -> "ETH-USD"
+            "SOL/USD", "SOL/USDT" -> "SOL-USD"
+            "BNB/USD", "BNB/USDT" -> "BNB-USDT"
+            "XRP/USD", "XRP/USDT" -> "XRP-USD"
             else -> asset.symbol.replace("/", "-")
         }
     }

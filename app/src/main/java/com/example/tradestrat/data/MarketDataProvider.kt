@@ -9,8 +9,8 @@ object MarketDataProvider {
     val ASSETS = listOf(
         // CRYPTO
         MarketAsset(
-            id = "btc_usd",
-            symbol = "BTC/USD",
+            id = "btc_usdt",
+            symbol = "BTC/USDT",
             name = "Bitcoin",
             category = AssetCategory.CRYPTO,
             basePrice = 64200.0,
@@ -18,8 +18,8 @@ object MarketDataProvider {
             defaultDecimals = 1
         ),
         MarketAsset(
-            id = "eth_usd",
-            symbol = "ETH/USD",
+            id = "eth_usdt",
+            symbol = "ETH/USDT",
             name = "Ethereum",
             category = AssetCategory.CRYPTO,
             basePrice = 3450.0,
@@ -27,8 +27,8 @@ object MarketDataProvider {
             defaultDecimals = 2
         ),
         MarketAsset(
-            id = "sol_usd",
-            symbol = "SOL/USD",
+            id = "sol_usdt",
+            symbol = "SOL/USDT",
             name = "Solana",
             category = AssetCategory.CRYPTO,
             basePrice = 148.0,
@@ -36,8 +36,8 @@ object MarketDataProvider {
             defaultDecimals = 2
         ),
         MarketAsset(
-            id = "bnb_usd",
-            symbol = "BNB/USD",
+            id = "bnb_usdt",
+            symbol = "BNB/USDT",
             name = "BNB Coin",
             category = AssetCategory.CRYPTO,
             basePrice = 585.0,
@@ -45,8 +45,8 @@ object MarketDataProvider {
             defaultDecimals = 2
         ),
         MarketAsset(
-            id = "xrp_usd",
-            symbol = "XRP/USD",
+            id = "xrp_usdt",
+            symbol = "XRP/USDT",
             name = "XRP",
             category = AssetCategory.CRYPTO,
             basePrice = 0.5850,

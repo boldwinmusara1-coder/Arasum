@@ -36,8 +36,13 @@ data class AppThemeColors(
     val tradeRedText: Color,
     val tradeAmber: Color,
     val tradeCyan: Color,
-    val tradePurple: Color
+    val tradePurple: Color,
+    val accentGreen: Color = tradeGreen,
+    val accentRed: Color = tradeRed,
+    val brandSecondary: Color = tradeCyan
 )
+
+typealias AppColors = AppThemeColors
 
 val DarkThemeColors = AppThemeColors(
     isDark = true,
