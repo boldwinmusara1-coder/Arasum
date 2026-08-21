@@ -50,7 +50,8 @@ object BacktestEngine {
             val direction: TradeDirection,
             val signalBarIndex: Int,
             val signalTimestamp: Long,
-            val isReversal: Boolean
+            val isReversal: Boolean,
+            val reason: String? = null
         )
         var pendingEntryOrder: PendingOrder? = null
 
@@ -133,7 +134,8 @@ object BacktestEngine {
                             isTrailingStop = isTrailing,
                             trailingPeakPrice = entryPrice,
                             entryFeePaid = posSizeResult.entryFee,
-                            initialRiskDollars = posSizeResult.initialRiskDollars
+                            initialRiskDollars = posSizeResult.initialRiskDollars,
+                            entryReason = order.reason
                         )
 
                         signalMarkers.add(
@@ -142,7 +144,8 @@ object BacktestEngine {
                                 timestamp = candle.timestamp,
                                 price = entryPrice,
                                 direction = direction,
-                                isEntry = true
+                                isEntry = true,
+                                signalReason = order.reason
                             )
                         )
                     }
@@ -342,7 +345,10 @@ object BacktestEngine {
             // =========================================================================
             // STEP 3: Strategy Signal Evaluation at Bar Close
             // =========================================================================
-            val (longSignal, shortSignal) = evaluateSignal(strategy, i, candles, indicators, orbSessionState, smcEngine)
+            val signalEval = evaluateSignal(strategy, i, candles, indicators, orbSessionState, smcEngine)
+            val longSignal = signalEval.longSignal
+            val shortSignal = signalEval.shortSignal
+            val signalReason = signalEval.reason
 
             if (risk.executionModel == ExecutionModel.REALISTIC) {
                 // Realistic Execution: Signal confirmed at bar close -> generate order for NEXT bar open
@@ -355,7 +361,8 @@ object BacktestEngine {
                             direction = if (pos.direction == TradeDirection.LONG) TradeDirection.SHORT else TradeDirection.LONG,
                             signalBarIndex = i,
                             signalTimestamp = candle.timestamp,
-                            isReversal = true
+                            isReversal = true,
+                            reason = signalReason
                         )
                     }
                 } else if (longSignal || (shortSignal && risk.allowShorting)) {
@@ -364,7 +371,8 @@ object BacktestEngine {
                         direction = direction,
                         signalBarIndex = i,
                         signalTimestamp = candle.timestamp,
-                        isReversal = false
+                        isReversal = false,
+                        reason = signalReason
                     )
                 }
             } else {
@@ -434,7 +442,8 @@ object BacktestEngine {
                             isTrailingStop = isTrailing,
                             trailingPeakPrice = entryPrice,
                             entryFeePaid = posSizeResult.entryFee,
-                            initialRiskDollars = posSizeResult.initialRiskDollars
+                            initialRiskDollars = posSizeResult.initialRiskDollars,
+                            entryReason = signalReason
                         )
 
                         signalMarkers.add(
@@ -443,7 +452,8 @@ object BacktestEngine {
                                 timestamp = candle.timestamp,
                                 price = entryPrice,
                                 direction = direction,
-                                isEntry = true
+                                isEntry = true,
+                                signalReason = signalReason
                             )
                         )
                     }
@@ -565,7 +575,8 @@ object BacktestEngine {
         val entryFeePaid: Double,
         val initialRiskDollars: Double,
         var maxRunUpPct: Double = 0.0,
-        var maxDrawdownPct: Double = 0.0
+        var maxDrawdownPct: Double = 0.0,
+        val entryReason: String? = null
     )
 
     data class PositionSizingResult(
@@ -630,7 +641,8 @@ object BacktestEngine {
             rMultiple = rMultiple,
             holdingBars = max(1, exitBarIndex - pos.entryBarIndex),
             maxRunUpPct = pos.maxRunUpPct,
-            maxDrawdownPct = pos.maxDrawdownPct
+            maxDrawdownPct = pos.maxDrawdownPct,
+            entryReason = pos.entryReason
         )
     }
 
@@ -946,6 +958,12 @@ object BacktestEngine {
         }
     }
 
+    data class SignalEvaluation(
+        val longSignal: Boolean,
+        val shortSignal: Boolean,
+        val reason: String? = null
+    )
+
     /**
      * Strictly causal signal evaluation.
      */
@@ -956,8 +974,8 @@ object BacktestEngine {
         ind: CalculatedIndicators,
         orbTracker: OrbSessionTracker,
         smcEngine: SmcEngine? = null
-    ): Pair<Boolean, Boolean> {
-        if (i < 2) return Pair(false, false)
+    ): SignalEvaluation {
+        if (i < 2) return SignalEvaluation(false, false)
 
         val current = candles[i]
         val prev = candles[i - 1]
@@ -967,76 +985,83 @@ object BacktestEngine {
 
         when (strategy.strategyType) {
             StrategyType.MA_CROSSOVER -> {
-                val fastCurr = ind.fastMa.getOrNull(i) ?: return Pair(false, false)
-                val fastPrev = ind.fastMa.getOrNull(i - 1) ?: return Pair(false, false)
-                val slowCurr = ind.slowMa.getOrNull(i) ?: return Pair(false, false)
-                val slowPrev = ind.slowMa.getOrNull(i - 1) ?: return Pair(false, false)
+                val fastCurr = ind.fastMa.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val fastPrev = ind.fastMa.getOrNull(i - 1) ?: return SignalEvaluation(false, false)
+                val slowCurr = ind.slowMa.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val slowPrev = ind.slowMa.getOrNull(i - 1) ?: return SignalEvaluation(false, false)
 
                 val longSignal = fastPrev <= slowPrev && fastCurr > slowCurr
                 val shortSignal = fastPrev >= slowPrev && fastCurr < slowCurr
-                return Pair(longSignal, shortSignal)
+                val reason = if (longSignal) "Fast MA Bullish Crossover" else if (shortSignal) "Fast MA Bearish Crossover" else null
+                return SignalEvaluation(longSignal, shortSignal, reason)
             }
 
             StrategyType.RSI_MEAN_REVERSION -> {
-                val rsiCurr = ind.rsi.getOrNull(i) ?: return Pair(false, false)
-                val rsiPrev = ind.rsi.getOrNull(i - 1) ?: return Pair(false, false)
+                val rsiCurr = ind.rsi.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val rsiPrev = ind.rsi.getOrNull(i - 1) ?: return SignalEvaluation(false, false)
                 val oversold = strategy.indicatorConfig.rsiParams.oversoldThreshold
                 val overbought = strategy.indicatorConfig.rsiParams.overboughtThreshold
 
                 val longSignal = rsiPrev <= oversold && rsiCurr > oversold
                 val shortSignal = rsiPrev >= overbought && rsiCurr < overbought
-                return Pair(longSignal, shortSignal)
+                val reason = if (longSignal) "RSI Oversold Rebound (<$oversold)" else if (shortSignal) "RSI Overbought Pullback (>$overbought)" else null
+                return SignalEvaluation(longSignal, shortSignal, reason)
             }
 
             StrategyType.MACD_MOMENTUM -> {
-                val macdCurr = ind.macdLine.getOrNull(i) ?: return Pair(false, false)
-                val macdPrev = ind.macdLine.getOrNull(i - 1) ?: return Pair(false, false)
-                val sigCurr = ind.macdSignal.getOrNull(i) ?: return Pair(false, false)
-                val sigPrev = ind.macdSignal.getOrNull(i - 1) ?: return Pair(false, false)
+                val macdCurr = ind.macdLine.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val macdPrev = ind.macdLine.getOrNull(i - 1) ?: return SignalEvaluation(false, false)
+                val sigCurr = ind.macdSignal.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val sigPrev = ind.macdSignal.getOrNull(i - 1) ?: return SignalEvaluation(false, false)
 
                 val longSignal = macdPrev <= sigPrev && macdCurr > sigCurr
                 val shortSignal = macdPrev >= sigPrev && macdCurr < sigCurr
-                return Pair(longSignal, shortSignal)
+                val reason = if (longSignal) "MACD Bullish Signal Line Cross" else if (shortSignal) "MACD Bearish Signal Line Cross" else null
+                return SignalEvaluation(longSignal, shortSignal, reason)
             }
 
             StrategyType.BOLLINGER_REVERSION -> {
-                val bbLowerCurr = ind.bbLower.getOrNull(i) ?: return Pair(false, false)
-                val bbLowerPrev = ind.bbLower.getOrNull(i - 1) ?: return Pair(false, false)
-                val bbUpperCurr = ind.bbUpper.getOrNull(i) ?: return Pair(false, false)
-                val bbUpperPrev = ind.bbUpper.getOrNull(i - 1) ?: return Pair(false, false)
+                val bbLowerCurr = ind.bbLower.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val bbLowerPrev = ind.bbLower.getOrNull(i - 1) ?: return SignalEvaluation(false, false)
+                val bbUpperCurr = ind.bbUpper.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val bbUpperPrev = ind.bbUpper.getOrNull(i - 1) ?: return SignalEvaluation(false, false)
 
                 val longSignal = prev.low <= bbLowerPrev && current.close > bbLowerCurr
                 val shortSignal = prev.high >= bbUpperPrev && current.close < bbUpperCurr
-                return Pair(longSignal, shortSignal)
+                val reason = if (longSignal) "Bollinger Lower Band Rejection" else if (shortSignal) "Bollinger Upper Band Rejection" else null
+                return SignalEvaluation(longSignal, shortSignal, reason)
             }
 
             StrategyType.BOLLINGER_BREAKOUT -> {
-                val bbUpperCurr = ind.bbUpper.getOrNull(i) ?: return Pair(false, false)
-                val bbUpperPrev = ind.bbUpper.getOrNull(i - 1) ?: return Pair(false, false)
-                val bbLowerCurr = ind.bbLower.getOrNull(i) ?: return Pair(false, false)
-                val bbLowerPrev = ind.bbLower.getOrNull(i - 1) ?: return Pair(false, false)
+                val bbUpperCurr = ind.bbUpper.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val bbUpperPrev = ind.bbUpper.getOrNull(i - 1) ?: return SignalEvaluation(false, false)
+                val bbLowerCurr = ind.bbLower.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val bbLowerPrev = ind.bbLower.getOrNull(i - 1) ?: return SignalEvaluation(false, false)
 
                 val longSignal = prev.close <= bbUpperPrev && current.close > bbUpperCurr
                 val shortSignal = prev.close >= bbLowerPrev && current.close < bbLowerCurr
-                return Pair(longSignal, shortSignal)
+                val reason = if (longSignal) "Bollinger Upper Band Volatility Breakout" else if (shortSignal) "Bollinger Lower Band Volatility Breakdown" else null
+                return SignalEvaluation(longSignal, shortSignal, reason)
             }
 
             StrategyType.SUPERTREND_RUN -> {
-                val stCurr = ind.supertrend.getOrNull(i) ?: return Pair(false, false)
-                val stPrev = ind.supertrend.getOrNull(i - 1) ?: return Pair(false, false)
+                val stCurr = ind.supertrend.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val stPrev = ind.supertrend.getOrNull(i - 1) ?: return SignalEvaluation(false, false)
 
                 val longSignal = prev.close <= stPrev && current.close > stCurr
                 val shortSignal = prev.close >= stPrev && current.close < stCurr
-                return Pair(longSignal, shortSignal)
+                val reason = if (longSignal) "Supertrend Bullish Flip" else if (shortSignal) "Supertrend Bearish Flip" else null
+                return SignalEvaluation(longSignal, shortSignal, reason)
             }
 
             StrategyType.TURTLE_BREAKOUT -> {
-                val upperPrev = ind.donchianUpper.getOrNull(i) ?: return Pair(false, false)
-                val lowerPrev = ind.donchianLower.getOrNull(i) ?: return Pair(false, false)
+                val upperPrev = ind.donchianUpper.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val lowerPrev = ind.donchianLower.getOrNull(i) ?: return SignalEvaluation(false, false)
 
                 val longSignal = current.high > upperPrev
                 val shortSignal = current.low < lowerPrev
-                return Pair(longSignal, shortSignal)
+                val reason = if (longSignal) "Donchian 20-Period High Breakout" else if (shortSignal) "Donchian 20-Period Low Breakdown" else null
+                return SignalEvaluation(longSignal, shortSignal, reason)
             }
 
             StrategyType.OPENING_RANGE_BREAKOUT -> {
@@ -1047,7 +1072,7 @@ object BacktestEngine {
                 val orbLow = orbTracker.orbLow
 
                 if (orbHigh == null || orbLow == null || !orbTracker.isOpeningRangeComplete || !orbTracker.isWithinTradingSession) {
-                    return Pair(false, false)
+                    return SignalEvaluation(false, false)
                 }
 
                 val recentVolAvg = candles.subList((i - 5).coerceAtLeast(0), i).map { it.volume }.average().coerceAtLeast(1.0)
@@ -1071,7 +1096,8 @@ object BacktestEngine {
                     shortSignal = shortSignal && rsi <= (100.0 - thresh)
                 }
 
-                return Pair(longSignal, shortSignal)
+                val reason = if (longSignal) "ORB High Breakout + Volume Confirmation" else if (shortSignal) "ORB Low Breakdown + Volume Confirmation" else null
+                return SignalEvaluation(longSignal, shortSignal, reason)
             }
 
             StrategyType.TRENDLINE_BREAK -> {
@@ -1145,7 +1171,8 @@ object BacktestEngine {
                     }
                 }
 
-                return Pair(longSignal, shortSignal)
+                val reason = if (longSignal) "Resistance Trendline Breakout" else if (shortSignal) "Support Trendline Breakdown" else null
+                return SignalEvaluation(longSignal, shortSignal, reason)
             }
 
             StrategyType.TRENDLINE_BOUNCE -> {
@@ -1236,14 +1263,15 @@ object BacktestEngine {
                     shortSignal = valid
                 }
 
-                return Pair(longSignal, shortSignal)
+                val reason = if (longSignal) "Support Trendline Bounce Rejection" else if (shortSignal) "Resistance Trendline Rejection" else null
+                return SignalEvaluation(longSignal, shortSignal, reason)
             }
 
             StrategyType.MULTI_CONFLUENCE -> {
-                val slowMa = ind.slowMa.getOrNull(i) ?: return Pair(false, false)
-                val rsiCurr = ind.rsi.getOrNull(i) ?: return Pair(false, false)
-                val histCurr = ind.macdHist.getOrNull(i) ?: return Pair(false, false)
-                val histPrev = ind.macdHist.getOrNull(i - 1) ?: return Pair(false, false)
+                val slowMa = ind.slowMa.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val rsiCurr = ind.rsi.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val histCurr = ind.macdHist.getOrNull(i) ?: return SignalEvaluation(false, false)
+                val histPrev = ind.macdHist.getOrNull(i - 1) ?: return SignalEvaluation(false, false)
 
                 val trendBullish = current.close > slowMa
                 val rsiBullish = rsiCurr in 40.0..60.0
@@ -1256,12 +1284,73 @@ object BacktestEngine {
                 val macdTurningDown = histCurr < histPrev && histCurr < 0
 
                 val shortSignal = trendBearish && rsiBearish && macdTurningDown
-                return Pair(longSignal, shortSignal)
+                val reason = if (longSignal) "EMA Trend + RSI Pullback + MACD Bullish Confluence" else if (shortSignal) "EMA Trend + RSI + MACD Bearish Confluence" else null
+                return SignalEvaluation(longSignal, shortSignal, reason)
             }
-            StrategyType.SMC_CONCEPTS, StrategyType.ICT_CONCEPTS, StrategyType.SMC_ICT_CONCEPTS -> {
+            StrategyType.SMC_CONCEPTS -> {
                 val engine = smcEngine ?: SmcEngine(strategy.indicatorConfig.smcConfig)
                 val smcEval = engine.evaluateBar(i, candles, ind.atr)
-                return Pair(smcEval.longSignal, smcEval.shortSignal)
+                val reason = if (smcEval.longSignal || smcEval.shortSignal) {
+                    val dir = if (smcEval.longSignal) TradeDirection.LONG else TradeDirection.SHORT
+                    val events = smcEval.detectedEvents.filter { it.direction == dir }
+                    if (events.isNotEmpty()) {
+                        events.map { event ->
+                            when (event.type) {
+                                StructureType.BULLISH_BOS, StructureType.BEARISH_BOS -> "BOS"
+                                StructureType.BULLISH_CHOCH, StructureType.BEARISH_CHOCH -> "CHOCH / MSS"
+                                StructureType.BULLISH_ORDER_BLOCK, StructureType.BEARISH_ORDER_BLOCK -> "Order Block Retest"
+                                StructureType.BULLISH_BREAKER_BLOCK, StructureType.BEARISH_BREAKER_BLOCK -> "Breaker Block Retest"
+                                else -> event.type.label
+                            }
+                        }.distinct().joinToString(" + ")
+                    } else "SMC Structure Break"
+                } else null
+                return SignalEvaluation(smcEval.longSignal, smcEval.shortSignal, reason)
+            }
+            StrategyType.ICT_CONCEPTS -> {
+                val engine = smcEngine ?: SmcEngine(strategy.indicatorConfig.smcConfig)
+                val smcEval = engine.evaluateBar(i, candles, ind.atr)
+                val reason = if (smcEval.longSignal || smcEval.shortSignal) {
+                    val dir = if (smcEval.longSignal) TradeDirection.LONG else TradeDirection.SHORT
+                    val events = smcEval.detectedEvents.filter { it.direction == dir }
+                    if (events.isNotEmpty()) {
+                        events.map { event ->
+                            when (event.type) {
+                                StructureType.BULLISH_LIQUIDITY_SWEEP, StructureType.BEARISH_LIQUIDITY_SWEEP -> "Liquidity Sweep"
+                                StructureType.BULLISH_FVG, StructureType.BEARISH_FVG -> "FVG Retest"
+                                StructureType.DISPLACEMENT_BULLISH, StructureType.DISPLACEMENT_BEARISH -> "Displacement"
+                                StructureType.EQUAL_HIGHS, StructureType.EQUAL_LOWS -> "EQH/EQL Pool"
+                                StructureType.PREMIUM_ZONE, StructureType.DISCOUNT_ZONE -> event.type.label
+                                else -> event.type.label
+                            }
+                        }.distinct().joinToString(" + ")
+                    } else "ICT Imbalance / Liquidity Run"
+                } else null
+                return SignalEvaluation(smcEval.longSignal, smcEval.shortSignal, reason)
+            }
+            StrategyType.SMC_ICT_CONCEPTS -> {
+                val engine = smcEngine ?: SmcEngine(strategy.indicatorConfig.smcConfig)
+                val smcEval = engine.evaluateBar(i, candles, ind.atr)
+                val reason = if (smcEval.longSignal || smcEval.shortSignal) {
+                    val dir = if (smcEval.longSignal) TradeDirection.LONG else TradeDirection.SHORT
+                    val events = smcEval.detectedEvents.filter { it.direction == dir }
+                    if (events.isNotEmpty()) {
+                        events.map { event ->
+                            when (event.type) {
+                                StructureType.BULLISH_BOS, StructureType.BEARISH_BOS -> "SMC BOS"
+                                StructureType.BULLISH_CHOCH, StructureType.BEARISH_CHOCH -> "SMC CHOCH"
+                                StructureType.BULLISH_ORDER_BLOCK, StructureType.BEARISH_ORDER_BLOCK -> "SMC Order Block"
+                                StructureType.BULLISH_BREAKER_BLOCK, StructureType.BEARISH_BREAKER_BLOCK -> "SMC Breaker Block"
+                                StructureType.BULLISH_LIQUIDITY_SWEEP, StructureType.BEARISH_LIQUIDITY_SWEEP -> "ICT Liquidity Sweep"
+                                StructureType.BULLISH_FVG, StructureType.BEARISH_FVG -> "ICT FVG"
+                                StructureType.DISPLACEMENT_BULLISH, StructureType.DISPLACEMENT_BEARISH -> "ICT Displacement"
+                                StructureType.EQUAL_HIGHS, StructureType.EQUAL_LOWS -> "ICT EQH/EQL"
+                                StructureType.PREMIUM_ZONE, StructureType.DISCOUNT_ZONE -> "ICT ${event.type.label}"
+                            }
+                        }.distinct().joinToString(" + ")
+                    } else "SMC & ICT Confluence"
+                } else null
+                return SignalEvaluation(smcEval.longSignal, smcEval.shortSignal, reason)
             }
         }
     }

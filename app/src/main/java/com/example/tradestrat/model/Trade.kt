@@ -36,7 +36,8 @@ data class Trade(
     val rMultiple: Double,
     val holdingBars: Int,
     val maxRunUpPct: Double,
-    val maxDrawdownPct: Double
+    val maxDrawdownPct: Double,
+    val entryReason: String? = null
 ) {
     val isWin: Boolean get() = pnlDollars > 0
 

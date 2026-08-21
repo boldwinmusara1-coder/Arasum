@@ -92,7 +92,8 @@ data class SignalMarker(
     val price: Double,
     val direction: TradeDirection,
     val isEntry: Boolean,
-    val exitReason: ExitReason? = null
+    val exitReason: ExitReason? = null,
+    val signalReason: String? = null
 )
 
 data class BacktestResult(

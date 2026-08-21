@@ -4,11 +4,13 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.animation.*
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ShowChart
+import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material.icons.outlined.*
 import androidx.compose.material3.*
@@ -30,11 +32,12 @@ enum class AppNavigationTab(
     val unselectedIcon: ImageVector,
     val testTag: String
 ) {
-    STUDIO("Chart", Icons.Filled.ShowChart, Icons.Outlined.ShowChart, "nav_tab_studio"),
-    STRATEGY("Strategy", Icons.Filled.Tune, Icons.Outlined.Tune, "nav_tab_strategy"),
-    OPTIMIZER("Optimizer", Icons.Filled.AutoFixHigh, Icons.Outlined.AutoFixHigh, "nav_tab_optimizer"),
-    RISK("Risk", Icons.Filled.Shield, Icons.Outlined.Shield, "nav_tab_risk"),
-    LIBRARY("Library", Icons.Filled.FolderOpen, Icons.Outlined.FolderOpen, "nav_tab_library")
+    DASHBOARD("Dashboard", Icons.Filled.Dashboard, Icons.Outlined.Dashboard, "nav_tab_dashboard"),
+    BACKTEST("Backtest", Icons.AutoMirrored.Filled.ShowChart, Icons.AutoMirrored.Outlined.ShowChart, "nav_tab_backtest"),
+    STRATEGIES("Strategies", Icons.Filled.Tune, Icons.Outlined.Tune, "nav_tab_strategies"),
+    SMC_ICT("SMC/ICT", Icons.Filled.AccountBalance, Icons.Outlined.AccountBalance, "nav_tab_smc_ict"),
+    RESULTS("Results", Icons.Filled.Assessment, Icons.Outlined.Assessment, "nav_tab_results"),
+    SETTINGS("Settings", Icons.Filled.Settings, Icons.Outlined.Settings, "nav_tab_settings")
 }
 
 class MainActivity : ComponentActivity() {
@@ -44,15 +47,16 @@ class MainActivity : ComponentActivity() {
         setContent {
             MyApplicationTheme {
                 val backtestViewModel: BacktestViewModel = viewModel()
-                var currentTab by remember { mutableStateOf(AppNavigationTab.STUDIO) }
+                var currentTab by remember { mutableStateOf(AppNavigationTab.DASHBOARD) }
+                val theme = LocalAppTheme.current
 
                 Scaffold(
                     modifier = Modifier.fillMaxSize(),
-                    containerColor = BentoBackground,
+                    containerColor = theme.background,
                     bottomBar = {
                         NavigationBar(
-                            containerColor = BentoCardBg,
-                            contentColor = BentoTextPrimary,
+                            containerColor = theme.surface,
+                            contentColor = theme.textPrimary,
                             tonalElevation = 0.dp
                         ) {
                             AppNavigationTab.values().forEach { tab ->
@@ -64,22 +68,23 @@ class MainActivity : ComponentActivity() {
                                         Icon(
                                             imageVector = if (isSelected) tab.selectedIcon else tab.unselectedIcon,
                                             contentDescription = tab.title,
-                                            modifier = Modifier.size(22.dp)
+                                            modifier = Modifier.size(20.dp)
                                         )
                                     },
                                     label = {
                                         Text(
                                             text = tab.title,
-                                            fontSize = 11.sp,
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal
+                                            fontSize = 10.sp,
+                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+                                            maxLines = 1
                                         )
                                     },
                                     colors = NavigationBarItemDefaults.colors(
-                                        selectedIconColor = BentoLilacText,
-                                        selectedTextColor = BentoLilac,
-                                        indicatorColor = BentoLilacContainer,
-                                        unselectedIconColor = BentoTextSecondary,
-                                        unselectedTextColor = BentoTextSecondary
+                                        selectedIconColor = theme.brandPrimaryText,
+                                        selectedTextColor = theme.brandPrimary,
+                                        indicatorColor = theme.brandPrimaryContainer,
+                                        unselectedIconColor = theme.textSecondary,
+                                        unselectedTextColor = theme.textSecondary
                                     ),
                                     modifier = Modifier.testTag(tab.testTag)
                                 )
@@ -88,35 +93,41 @@ class MainActivity : ComponentActivity() {
                     }
                 ) { innerPadding ->
                     when (currentTab) {
-                        AppNavigationTab.STUDIO -> BacktestStudioScreen(
+                        AppNavigationTab.DASHBOARD -> DashboardScreen(
                             viewModel = backtestViewModel,
                             modifier = Modifier.padding(innerPadding),
-                            onNavigateToStrategyBuilder = { currentTab = AppNavigationTab.STRATEGY },
-                            onNavigateToRiskManager = { currentTab = AppNavigationTab.RISK }
+                            onNavigateToBacktest = { currentTab = AppNavigationTab.BACKTEST },
+                            onNavigateToStrategies = { currentTab = AppNavigationTab.STRATEGIES },
+                            onNavigateToResults = { currentTab = AppNavigationTab.RESULTS }
                         )
 
-                        AppNavigationTab.STRATEGY -> StrategyBuilderScreen(
+                        AppNavigationTab.BACKTEST -> BacktestScreen(
                             viewModel = backtestViewModel,
                             modifier = Modifier.padding(innerPadding),
-                            onBacktestNow = { currentTab = AppNavigationTab.STUDIO }
+                            onBacktestComplete = { currentTab = AppNavigationTab.RESULTS }
                         )
 
-                        AppNavigationTab.RISK -> RiskManagementScreen(
+                        AppNavigationTab.STRATEGIES -> StrategiesScreen(
                             viewModel = backtestViewModel,
                             modifier = Modifier.padding(innerPadding),
-                            onBacktestNow = { currentTab = AppNavigationTab.STUDIO }
+                            onNavigateToBacktest = { currentTab = AppNavigationTab.BACKTEST }
                         )
 
-                        AppNavigationTab.OPTIMIZER -> OptimizerScreen(
+                        AppNavigationTab.SMC_ICT -> SmcIctScreen(
                             viewModel = backtestViewModel,
                             modifier = Modifier.padding(innerPadding),
-                            onNavigateToStudio = { currentTab = AppNavigationTab.STUDIO }
+                            onNavigateToBacktest = { currentTab = AppNavigationTab.BACKTEST }
                         )
 
-                        AppNavigationTab.LIBRARY -> SavedStrategiesScreen(
+                        AppNavigationTab.RESULTS -> ResultsScreen(
                             viewModel = backtestViewModel,
                             modifier = Modifier.padding(innerPadding),
-                            onNavigateToStudio = { currentTab = AppNavigationTab.STUDIO }
+                            onNavigateToBacktest = { currentTab = AppNavigationTab.BACKTEST }
+                        )
+
+                        AppNavigationTab.SETTINGS -> SettingsScreen(
+                            viewModel = backtestViewModel,
+                            modifier = Modifier.padding(innerPadding)
                         )
                     }
                 }
